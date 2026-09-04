@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { createConnection } from "node:net";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -12,8 +12,7 @@ if (!intercomExtension) throw new Error("Set PI_INTERCOM_EXTENSION to pi-interco
 const piBin = process.env.PI_BIN || "pi";
 const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 const brokerSocket = join(agentDir, "intercom", "broker.sock");
-const project = `pair-smoke-${process.pid}-${Date.now()}`;
-const showUnnamed = "Show unnamed sessions…";
+const project = basename(root);
 let requestNumber = 0;
 
 async function requireExistingBroker() {
@@ -28,11 +27,20 @@ async function requireExistingBroker() {
 }
 
 class RpcClient {
-  constructor(actorIdentity) {
-    this.actorIdentity = actorIdentity;
+  constructor(role, reviewPair = true) {
+    this.role = role;
     this.pending = new Map();
     this.events = [];
     this.stderr = "";
+    const environment = {
+      ...process.env,
+      PI_INTERCOM_ASK_TIMEOUT_MS: "3600000",
+      PAIR_SMOKE_API_KEY: "unused",
+      PAIR_SMOKE_ROLE: role,
+    };
+    delete environment.AI_AGENTS_SANDBOX_PROJECT_NAME;
+    delete environment.AI_AGENTS_SANDBOX_ACTOR_IDENTITY;
+    delete environment.PI_INTERCOM_SCOPE_ID;
     this.child = spawn(piBin, [
       "--mode", "rpc",
       "--no-session",
@@ -40,24 +48,17 @@ class RpcClient {
       "--provider", "pair-smoke",
       "--model", "pair-smoke-model",
       "-e", intercomExtension,
-      "-e", join(root, "index.ts"),
+      ...(reviewPair ? ["-e", join(root, "index.ts")] : []),
       "-e", join(root, "test", "fixtures", "fake-provider.ts"),
     ], {
       cwd: root,
-      env: {
-        ...process.env,
-        AI_AGENTS_SANDBOX_PROJECT_NAME: project,
-        AI_AGENTS_SANDBOX_ACTOR_IDENTITY: actorIdentity,
-        PI_INTERCOM_SCOPE_ID: project,
-        PI_INTERCOM_ASK_TIMEOUT_MS: "3600000",
-        PAIR_SMOKE_API_KEY: "unused",
-      },
+      env: environment,
       stdio: ["pipe", "pipe", "pipe"],
     });
     createInterface({ input: this.child.stdout }).on("line", (line) => this.receive(line));
     this.child.stderr.on("data", (chunk) => { this.stderr += chunk; });
     this.child.once("exit", (code, signal) => {
-      for (const { reject } of this.pending.values()) reject(new Error(`${actorIdentity} exited (${code ?? signal}): ${this.stderr}`));
+      for (const { reject } of this.pending.values()) reject(new Error(`${role} exited (${code ?? signal}): ${this.stderr}`));
       this.pending.clear();
     });
   }
@@ -91,15 +92,15 @@ class RpcClient {
     clearTimeout(pending.timer);
     this.pending.delete(message.id);
     if (message.success) pending.resolve(message);
-    else pending.reject(new Error(`${this.actorIdentity} ${message.command} failed: ${message.error}`));
+    else pending.reject(new Error(`${this.role} ${message.command} failed: ${message.error}`));
   }
 
   request(command, timeoutMs = 30_000) {
-    const id = `${this.actorIdentity}-${++requestNumber}`;
+    const id = `${this.role}-${++requestNumber}`;
     return new Promise((resolveRequest, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`${this.actorIdentity} timed out waiting for ${command.type}: ${this.stderr}`));
+        reject(new Error(`${this.role} timed out waiting for ${command.type}: ${this.stderr}`));
       }, timeoutMs);
       this.pending.set(id, { resolve: resolveRequest, reject, timer });
       this.send({ ...command, id });
@@ -114,7 +115,7 @@ class RpcClient {
       if (stable === 3) return;
       await new Promise((resolveWait) => setTimeout(resolveWait, 50));
     }
-    throw new Error(`${this.actorIdentity} did not become idle.`);
+    throw new Error(`${this.role} did not become idle.`);
   }
 
   async state() {
@@ -141,22 +142,18 @@ function occurrences(messages, marker) {
 }
 
 await requireExistingBroker();
-const clients = [new RpcClient("gpt"), new RpcClient("gpt-reviewer"), new RpcClient("legion")];
+const clients = [new RpcClient("developer"), new RpcClient("reviewer"), new RpcClient("unrelated", false)];
 const [developer, reviewer, unrelated] = clients;
 try {
   await Promise.all(clients.map((client) => client.request({ type: "get_commands" })));
   await new Promise((resolveWait) => setTimeout(resolveWait, 500));
-  const unrelatedId = (await unrelated.state()).sessionId;
-
   await developer.request({ type: "prompt", message: "/pair-review #0710" });
   await Promise.all(clients.map((client) => client.waitIdle()));
   assert.equal((await developer.state()).sessionName, `${project}-710`);
   assert.equal((await reviewer.state()).sessionName, `${project}-710-review`);
   assert.equal((await unrelated.state()).sessionName, undefined);
-  const developerSelections = developer.events.filter((event) => event.type === "extension_ui_request" && event.method === "select" && event.title === "Select developer");
-  assert.ok(developerSelections[0].options.includes(showUnnamed));
-  assert.ok(!developerSelections[0].options.some((option) => option.includes(unrelatedId)));
-  assert.ok(developerSelections[1].options.some((option) => option.includes(unrelatedId)));
+  const reviewerSelections = developer.events.filter((event) => event.type === "extension_ui_request" && event.method === "select" && event.title === "Select reviewer");
+  assert.equal(reviewerSelections.length, 0);
 
   const firstDeveloperMessages = await developer.messages();
   const firstReviewerMessages = await reviewer.messages();

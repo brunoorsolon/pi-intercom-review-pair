@@ -11,24 +11,24 @@ pi install npm:pi-intercom
 pi install npm:pi-intercom-review-pair
 ```
 
-The sessions must share `PI_INTERCOM_SCOPE_ID`. The extension also requires `AI_AGENTS_SANDBOX_PROJECT_NAME` and `AI_AGENTS_SANDBOX_ACTOR_IDENTITY`; sandbox launches normally provide all three values.
+No sandbox environment variables are required. If `PI_INTERCOM_SCOPE_ID` is configured, normal pi-intercom scope isolation still applies; otherwise the extension can discover any connected session that also has review-pair loaded.
 
 ## Use
 
-Run this from any participating session:
+From the session that should become the developer, run:
 
 ```text
 /pair-review 999
 ```
 
-Omit the number to enter it interactively. The command identifies base and reviewer roles from immutable Actor Identity metadata, asks for any ambiguous session selection, confirms the exact pair, and assigns these names:
+Omit the number to enter it interactively. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID.
+
+The current working directory's basename supplies the project prefix. After confirmation, the command assigns these names:
 
 ```text
 <project>-<issue>
 <project>-<issue>-review
 ```
-
-Unnamed fallback sessions stay hidden unless you choose **Show unnamed sessions…**. The invoking session remains eligible as the default even when unnamed.
 
 Both targets receive self-contained role instructions. The developer asks the exact reviewer session to inspect a committed candidate, verifies findings, repairs valid ones, and repeats until the reviewer explicitly returns `No findings.` or requests a human decision.
 
