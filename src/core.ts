@@ -1,4 +1,4 @@
-import { basename, resolve } from "node:path";
+import { randomInt } from "node:crypto";
 
 export interface LiveSession {
   id: string;
@@ -56,8 +56,16 @@ export function normalizeIssueNumber(input: string): string {
   return issue.toString();
 }
 
-export function projectName(cwd: string): string {
-  return basename(resolve(cwd)) || "project";
+export const FALLBACK_PROJECT_NAMES = [
+  "amber", "apple", "atlas", "badger", "bamboo", "beacon", "birch", "blue", "brook", "cedar",
+  "cherry", "cloud", "coral", "crane", "dawn", "delta", "ember", "falcon", "fern", "field",
+  "finch", "forest", "fox", "frost", "garden", "grove", "harbor", "hazel", "hill", "iris",
+  "island", "jade", "lake", "maple", "meadow", "moon", "oak", "ocean", "olive", "otter",
+  "pine", "river", "robin", "sage", "sky", "stone", "sun", "swift", "willow", "wind",
+] as const;
+
+export function randomProjectName(): string {
+  return FALLBACK_PROJECT_NAMES[randomInt(FALLBACK_PROJECT_NAMES.length)]!;
 }
 
 export function targetNames(project: string, issue: string): { developer: string; reviewer: string } {

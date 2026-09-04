@@ -18,12 +18,12 @@ No sandbox environment variables are required. If `PI_INTERCOM_SCOPE_ID` is conf
 From the session that should become the developer, run:
 
 ```text
-/pair-review 999
+/pair-review 999 billing
 ```
 
-Omit the number to enter it interactively. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID.
+Omit the issue number to enter it interactively. Omit the project name to enter it interactively; leave that prompt blank to use a random common word. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID.
 
-The current working directory's basename supplies the project prefix. After confirmation, the command assigns these names:
+After confirmation, the command assigns these names:
 
 ```text
 <project>-<issue>

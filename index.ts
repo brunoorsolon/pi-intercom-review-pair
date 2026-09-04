@@ -8,7 +8,7 @@ import {
   formatCandidate,
   normalizeIssueNumber,
   parsePairMessage,
-  projectName,
+  randomProjectName,
   reviewerPrompt,
   targetNames,
   type AcknowledgementMessage,
@@ -307,14 +307,22 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
     }
     commandRunning = true;
     try {
-      let issueInput = args.trim();
+      const [issueArgument = "", ...projectArguments] = args.trim().split(/\s+/);
+      let issueInput = issueArgument;
       if (!issueInput) {
         const entered = await ctx.ui.input("Issue number", "999");
         if (entered === undefined) return;
         issueInput = entered.trim();
       }
       const issue = normalizeIssueNumber(issueInput);
-      const project = projectName(ctx.cwd);
+
+      let project = projectArguments.join(" ").trim();
+      if (!project) {
+        const entered = await ctx.ui.input("Project name (optional)", "Leave blank for a random word");
+        if (entered === undefined) return;
+        project = entered.trim() || randomProjectName();
+      }
+
       const { sessions, self } = await discover();
       const developer = sessions.find((session) => session.id === self)!;
       const reviewer = await chooseReviewer(sessions, self, ctx);
@@ -365,7 +373,7 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
         return `${label} ${shortSession(session)}: ${result.detail || "assignment failed"}`;
       };
       ctx.ui.notify(
-        `Review pair incomplete. ${describe("Developer", developer, developerResult)}; ${describe("Reviewer", reviewer, reviewerResult)}. Rerun /pair-review ${issue} after correcting the failed side.`,
+        `Review pair incomplete. ${describe("Developer", developer, developerResult)}; ${describe("Reviewer", reviewer, reviewerResult)}. Rerun /pair-review ${issue} ${project} after correcting the failed side.`,
         "error",
       );
     } catch (error) {
