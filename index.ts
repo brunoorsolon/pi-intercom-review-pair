@@ -8,20 +8,18 @@ import {
   formatCandidate,
   normalizeIssueNumber,
   parsePairMessage,
+  projectName,
   reviewerPrompt,
-  roleFromActorIdentity,
   targetNames,
   type AcknowledgementMessage,
   type AssignmentMessage,
   type LiveSession,
-  type PairCandidate,
-  type PeerMetadata,
   type PresenceMessage,
 } from "./src/core.ts";
 
 export const INTERCOM_REGISTER_EVENT = "intercom:extension-register";
 export const INTERCOM_REGISTRY_READY_EVENT = "intercom:extension-registry-ready";
-export const REVIEW_PAIR_NAMESPACE = "pi-intercom-review-pair/v1";
+export const REVIEW_PAIR_NAMESPACE = "pi-intercom-review-pair/v2";
 
 interface IntercomOwner {
   sessionId: string;
@@ -72,7 +70,6 @@ interface PendingAssignment {
 
 const DISCOVERY_WAIT_MS = 250;
 const ACK_WAIT_MS = 5_000;
-const SHOW_UNNAMED = "Show unnamed sessions…";
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -87,11 +84,8 @@ function shortSession(session: LiveSession): string {
 }
 
 export default function reviewPairExtension(pi: ExtensionAPI): void {
-  const project = process.env.AI_AGENTS_SANDBOX_PROJECT_NAME?.trim();
-  const actorIdentity = process.env.AI_AGENTS_SANDBOX_ACTOR_IDENTITY?.trim();
-  const localRole = roleFromActorIdentity(actorIdentity);
   const instanceNonce = randomUUID();
-  const peers = new Map<string, PeerMetadata>();
+  const peers = new Set<string>();
   const completedAssignments = new Map<string, AcknowledgementMessage>();
   const assignmentsInFlight = new Set<string>();
   const pendingAssignments = new Map<string, PendingAssignment>();
@@ -121,17 +115,10 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
   };
 
   const announce = (): void => {
-    if (!project || !actorIdentity || !localRole || !channel) return;
+    if (!channel) return;
     const snapshot = channel.snapshot();
     if (!snapshot.connected || !snapshot.supported) return;
-    const message: PresenceMessage = {
-      version: 1,
-      type: "presence",
-      nonce: instanceNonce,
-      project,
-      actorIdentity,
-      role: localRole,
-    };
+    const message: PresenceMessage = { version: 2, type: "presence", nonce: instanceNonce };
     channel.publish(message, { audience: "capable" });
   };
 
@@ -144,19 +131,18 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
   };
 
   const applyAssignment = async (message: AssignmentMessage, fromSessionId: string): Promise<void> => {
-    if (!project || !actorIdentity || !localRole || !runtimeContext || !channel) return;
-    if (message.project !== project || message.coordinatorId !== fromSessionId) return;
+    if (!runtimeContext || !channel || message.coordinatorId !== fromSessionId) return;
 
     const issue = normalizeIssueNumber(message.issue);
     if (issue !== message.issue) return;
-    const expectedAssignmentId = assignmentId(project, issue, message.developerId, message.reviewerId);
+    const expectedAssignmentId = assignmentId(message.project, issue, message.developerId, message.reviewerId);
     if (message.assignmentId !== expectedAssignmentId) return;
 
     const self = currentSessionId();
     if (!self || (self !== message.developerId && self !== message.reviewerId)) return;
-    const expectedRole = self === message.developerId ? "base" : "reviewer";
-    const names = targetNames(project, issue);
-    const expectedName = expectedRole === "base" ? names.developer : names.reviewer;
+    const isDeveloper = self === message.developerId;
+    const names = targetNames(message.project, issue);
+    const expectedName = isDeveloper ? names.developer : names.reviewer;
 
     const completed = completedAssignments.get(message.assignmentId);
     if (completed) {
@@ -167,9 +153,6 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
     assignmentsInFlight.add(message.assignmentId);
 
     try {
-      if (localRole !== expectedRole) {
-        throw new Error(`Selected ${expectedRole} target has Actor Identity ${actorIdentity} (${localRole}).`);
-      }
       const sessions = await channel.listSessions();
       const conflict = findNameConflict(sessions, expectedName, self);
       if (conflict) throw new Error(`Session name ${expectedName} is already used by ${shortSession(conflict)}.`);
@@ -177,16 +160,15 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
       const developer = { id: message.developerId, name: names.developer };
       const reviewer = { id: message.reviewerId, name: names.reviewer };
       pi.setSessionName(expectedName);
-      const prompt = expectedRole === "base"
-        ? developerPrompt(project, issue, reviewer)
-        : reviewerPrompt(project, issue, developer);
+      const prompt = isDeveloper
+        ? developerPrompt(message.project, issue, reviewer)
+        : reviewerPrompt(message.project, issue, developer);
       pi.sendUserMessage(prompt, runtimeContext.isIdle() ? undefined : { deliverAs: "followUp" });
 
       const ack: AcknowledgementMessage = {
-        version: 1,
+        version: 2,
         type: "ack",
         assignmentId: message.assignmentId,
-        project,
         ok: true,
         name: expectedName,
       };
@@ -194,10 +176,9 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
       sendAck(ack);
     } catch (error) {
       sendAck({
-        version: 1,
+        version: 2,
         type: "ack",
         assignmentId: message.assignmentId,
-        project,
         ok: false,
         detail: errorMessage(error),
       });
@@ -207,7 +188,6 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
   };
 
   const receiveAck = (message: AcknowledgementMessage, fromSessionId: string): void => {
-    if (message.project !== project) return;
     const pending = pendingAssignments.get(message.assignmentId);
     if (!pending || !pending.expected.has(fromSessionId) || pending.results.has(fromSessionId)) return;
     pending.results.set(fromSessionId, {
@@ -238,15 +218,9 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
     if (event.type !== "message") return;
 
     const message = parsePairMessage(event.payload);
-    if (!message || message.project !== project) return;
+    if (!message) return;
     if (message.type === "presence") {
-      const role = roleFromActorIdentity(message.actorIdentity);
-      if (role !== message.role) return;
-      peers.set(event.fromSessionId, {
-        project: message.project,
-        actorIdentity: message.actorIdentity,
-        role,
-      });
+      peers.add(event.fromSessionId);
       if (message.nonce === instanceNonce) localSessionId = event.fromSessionId;
       return;
     }
@@ -277,48 +251,28 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
   };
 
   const discover = async (): Promise<{ sessions: LiveSession[]; self: string }> => {
-    if (!project || !actorIdentity || !localRole) {
-      throw new Error("The sandbox project name and Actor Identity environment are required.");
-    }
-    const scope = process.env.PI_INTERCOM_SCOPE_ID?.trim();
-    if (scope && scope !== project) throw new Error(`Intercom scope ${scope} does not match project ${project}.`);
-    publish({ version: 1, type: "discover", requestId: randomUUID(), project });
+    publish({ version: 2, type: "discover", requestId: randomUUID() });
     await delay(DISCOVERY_WAIT_MS);
     const sessions = await channel!.listSessions();
     const possibleSelf = currentSessionId();
     const self = possibleSelf && sessions.some((session) => session.id === possibleSelf)
       ? possibleSelf
       : undefined;
-    if (!self) throw new Error("The current session is missing from the scoped intercom roster.");
+    if (!self) throw new Error("The current session is missing from the intercom roster.");
     return { sessions, self };
   };
 
-  const chooseCandidate = async (
-    role: "developer" | "reviewer",
+  const chooseReviewer = async (
     sessions: LiveSession[],
     self: string,
     ctx: ExtensionCommandContext,
-  ): Promise<PairCandidate | undefined> => {
-    const expectedRole = role === "developer" ? "base" : "reviewer";
-    const all = candidateSessions(sessions, peers, project!, expectedRole, true, self);
-    if (all.length === 0) throw new Error(`No live ${role} session advertises ${expectedRole} Actor Identity metadata.`);
+  ): Promise<LiveSession | undefined> => {
+    const candidates = candidateSessions(sessions, peers, self);
+    if (candidates.length === 0) throw new Error("No other live session advertises the review-pair extension.");
+    if (candidates.length === 1) return candidates[0];
 
-    let includeUnnamed = false;
-    while (true) {
-      const visible = candidateSessions(sessions, peers, project!, expectedRole, includeUnnamed, self);
-      const hiddenCount = all.length - visible.length;
-      if (visible.length === 1 && hiddenCount === 0) return visible[0];
-
-      const options = visible.map(formatCandidate);
-      if (!includeUnnamed && hiddenCount > 0) options.push(SHOW_UNNAMED);
-      const selected = await ctx.ui.select(`Select ${role}`, options);
-      if (!selected) return undefined;
-      if (selected === SHOW_UNNAMED) {
-        includeUnnamed = true;
-        continue;
-      }
-      return visible.find((candidate) => formatCandidate(candidate) === selected);
-    }
+    const selected = await ctx.ui.select("Select reviewer", candidates.map(formatCandidate));
+    return selected ? candidates.find((candidate) => formatCandidate(candidate) === selected) : undefined;
   };
 
   const awaitAcknowledgements = (
@@ -360,17 +314,17 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
         issueInput = entered.trim();
       }
       const issue = normalizeIssueNumber(issueInput);
+      const project = projectName(ctx.cwd);
       const { sessions, self } = await discover();
-      const developer = await chooseCandidate("developer", sessions, self, ctx);
-      if (!developer) return;
-      const reviewer = await chooseCandidate("reviewer", sessions, self, ctx);
+      const developer = sessions.find((session) => session.id === self)!;
+      const reviewer = await chooseReviewer(sessions, self, ctx);
       if (!reviewer) return;
 
-      const names = targetNames(project!, issue);
+      const names = targetNames(project, issue);
       const latestSessions = await channel!.listSessions();
-      const developerConflict = findNameConflict(latestSessions, names.developer, developer.session.id);
+      const developerConflict = findNameConflict(latestSessions, names.developer, developer.id);
       if (developerConflict) throw new Error(`${names.developer} is already used by ${shortSession(developerConflict)}.`);
-      const reviewerConflict = findNameConflict(latestSessions, names.reviewer, reviewer.session.id);
+      const reviewerConflict = findNameConflict(latestSessions, names.reviewer, reviewer.id);
       if (reviewerConflict) throw new Error(`${names.reviewer} is already used by ${shortSession(reviewerConflict)}.`);
 
       const confirmed = await ctx.ui.confirm(
@@ -382,24 +336,24 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
       );
       if (!confirmed) return;
 
-      const id = assignmentId(project!, issue, developer.session.id, reviewer.session.id);
+      const id = assignmentId(project, issue, developer.id, reviewer.id);
       const assignment: AssignmentMessage = {
-        version: 1,
+        version: 2,
         type: "assign",
         assignmentId: id,
         coordinatorId: self,
-        project: project!,
+        project,
         issue,
-        developerId: developer.session.id,
-        reviewerId: reviewer.session.id,
+        developerId: developer.id,
+        reviewerId: reviewer.id,
       };
-      const results = await awaitAcknowledgements(assignment, [developer.session.id, reviewer.session.id]);
+      const results = await awaitAcknowledgements(assignment, [developer.id, reviewer.id]);
       const verifyName = (result: AckResult | undefined, expectedName: string): AckResult | undefined => {
         if (!result?.ok || result.name === expectedName) return result;
         return { ok: false, detail: `acknowledged unexpected name ${result.name || "<missing>"}` };
       };
-      const developerResult = verifyName(results.get(developer.session.id), names.developer);
-      const reviewerResult = verifyName(results.get(reviewer.session.id), names.reviewer);
+      const developerResult = verifyName(results.get(developer.id), names.developer);
+      const reviewerResult = verifyName(results.get(reviewer.id), names.reviewer);
       if (developerResult?.ok && reviewerResult?.ok) {
         ctx.ui.notify(`Review pair active: ${names.developer} ↔ ${names.reviewer}`, "info");
         return;
@@ -411,7 +365,7 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
         return `${label} ${shortSession(session)}: ${result.detail || "assignment failed"}`;
       };
       ctx.ui.notify(
-        `Review pair incomplete. ${describe("Developer", developer.session, developerResult)}; ${describe("Reviewer", reviewer.session, reviewerResult)}. Rerun /pair-review ${issue} after correcting the failed side.`,
+        `Review pair incomplete. ${describe("Developer", developer, developerResult)}; ${describe("Reviewer", reviewer, reviewerResult)}. Rerun /pair-review ${issue} after correcting the failed side.`,
         "error",
       );
     } catch (error) {

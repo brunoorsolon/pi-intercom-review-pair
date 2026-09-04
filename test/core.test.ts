@@ -5,13 +5,13 @@ import {
   candidateSessions,
   developerPrompt,
   findNameConflict,
+  formatCandidate,
   normalizeIssueNumber,
   parsePairMessage,
+  projectName,
   reviewerPrompt,
-  roleFromActorIdentity,
   targetNames,
   type LiveSession,
-  type PeerMetadata,
 } from "../src/core.ts";
 
 test("normalizes numeric issue input and rejects invalid values", () => {
@@ -22,14 +22,9 @@ test("normalizes numeric issue input and rejects invalid values", () => {
   }
 });
 
-test("derives roles only from Actor Identity metadata", () => {
-  assert.equal(roleFromActorIdentity("gpt"), "base");
-  assert.equal(roleFromActorIdentity("gpt-reviewer"), "reviewer");
-  assert.equal(roleFromActorIdentity("  legion-reviewer  "), "reviewer");
-  assert.equal(roleFromActorIdentity(""), undefined);
-});
-
-test("uses the required names and a deterministic assignment identity", () => {
+test("derives names from the working directory and issue", () => {
+  assert.equal(projectName("/work/billing"), "billing");
+  assert.equal(projectName("/"), "project");
   assert.deepEqual(targetNames("billing", "710"), {
     developer: "billing-710",
     reviewer: "billing-710-review",
@@ -44,29 +39,18 @@ test("uses the required names and a deterministic assignment identity", () => {
   );
 });
 
-test("filters by project and role while hiding unnamed fallback peers", () => {
+test("offers every capable peer and excludes the invoking session", () => {
   const sessions: LiveSession[] = [
     { id: "current", runtimeFallbackAlias: true, cwd: "/repo", model: "gpt" },
     { id: "named", name: "ready", cwd: "/repo", model: "gpt" },
-    { id: "hidden", runtimeFallbackAlias: true, cwd: "/repo", model: "gpt" },
-    { id: "unnamed", cwd: "/repo", model: "gpt" },
-    { id: "other-project", name: "other", cwd: "/repo", model: "gpt" },
+    { id: "unnamed", runtimeFallbackAlias: true, cwd: "/other", model: "claude" },
+    { id: "without-extension", name: "other", cwd: "/repo", model: "gpt" },
   ];
-  const metadata = new Map<string, PeerMetadata>([
-    ["current", { project: "billing", actorIdentity: "gpt", role: "base" }],
-    ["named", { project: "billing", actorIdentity: "legion", role: "base" }],
-    ["hidden", { project: "billing", actorIdentity: "oracle", role: "base" }],
-    ["unnamed", { project: "billing", actorIdentity: "claude", role: "base" }],
-    ["other-project", { project: "catalog", actorIdentity: "gpt", role: "base" }],
-  ]);
+  const capable = new Set(["current", "named", "unnamed"]);
 
   assert.deepEqual(
-    candidateSessions(sessions, metadata, "billing", "base", false, "current").map(({ session }) => session.id),
-    ["current", "named"],
-  );
-  assert.deepEqual(
-    candidateSessions(sessions, metadata, "billing", "base", true, "current").map(({ session }) => session.id),
-    ["current", "hidden", "named", "unnamed"],
+    candidateSessions(sessions, capable, "current").map((session) => session.id),
+    ["named", "unnamed"],
   );
 });
 
@@ -77,6 +61,16 @@ test("detects duplicate names case-insensitively except on the selected target",
   ];
   assert.equal(findNameConflict(sessions, "BILLING-710", "two")?.id, "one");
   assert.equal(findNameConflict(sessions, "billing-710", "one"), undefined);
+});
+
+test("formats candidates with location and runtime details", () => {
+  const formatted = formatCandidate({
+    id: "session-id",
+    cwd: "/work/billing",
+    model: "gpt-5",
+    status: "idle",
+  });
+  assert.equal(formatted, "Unnamed session — /work/billing · gpt-5 · idle [session-id]");
 });
 
 test("role prompts pin exact peers and the repair-review loop", () => {
@@ -95,23 +89,17 @@ test("role prompts pin exact peers and the repair-review loop", () => {
 
 test("parses only bounded protocol messages", () => {
   assert.deepEqual(parsePairMessage({
-    version: 1,
+    version: 2,
     type: "presence",
     nonce: "nonce",
-    project: "billing",
-    actorIdentity: "gpt-reviewer",
-    role: "reviewer",
   }), {
-    version: 1,
+    version: 2,
     type: "presence",
     nonce: "nonce",
-    project: "billing",
-    actorIdentity: "gpt-reviewer",
-    role: "reviewer",
   });
-  assert.equal(parsePairMessage({ version: 2, type: "presence" }), undefined);
+  assert.equal(parsePairMessage({ version: 1, type: "presence", nonce: "nonce" }), undefined);
   assert.equal(parsePairMessage({
-    version: 1,
+    version: 2,
     type: "assign",
     assignmentId: "x",
     coordinatorId: "one",
@@ -120,6 +108,6 @@ test("parses only bounded protocol messages", () => {
     developerId: "two",
     reviewerId: "three",
   }), undefined);
-  assert.equal(parsePairMessage({ version: 1, type: "ack", project: "billing", assignmentId: "x", ok: "yes" }), undefined);
+  assert.equal(parsePairMessage({ version: 2, type: "ack", assignmentId: "x", ok: "yes" }), undefined);
   assert.equal(parsePairMessage(["not", "an", "object"]), undefined);
 });

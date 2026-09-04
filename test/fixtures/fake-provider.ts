@@ -67,7 +67,7 @@ function streamTool(model: Record<string, unknown>, name: string, args: Record<s
 }
 
 export default function fakeReviewProvider(pi: { registerProvider(name: string, provider: Record<string, unknown>): void }): void {
-  const actorIdentity = process.env.AI_AGENTS_SANDBOX_ACTOR_IDENTITY ?? "";
+  const role = process.env.PAIR_SMOKE_ROLE;
   pi.registerProvider("pair-smoke", {
     baseUrl: "http://127.0.0.1/unused",
     apiKey: "unused",
@@ -87,21 +87,21 @@ export default function fakeReviewProvider(pi: { registerProvider(name: string, 
       const transcript = context.messages.map(messageText).join("\n");
       const reviewerId = transcript.match(/reviewer is .*\(exact intercom session ID ([^)]+)\)/)?.[1];
 
-      if (!actorIdentity.endsWith("-reviewer") && last?.role === "user" && lastText.includes("BEGIN_FAKE_REVIEW_LOOP")) {
+      if (role === "developer" && last?.role === "user" && lastText.includes("BEGIN_FAKE_REVIEW_LOOP")) {
         if (!reviewerId) return streamText(model, "missing reviewer id");
         return streamTool(model, "intercom", { action: "ask", to: reviewerId, message: "FAKE_REVIEW_REQUEST_1" });
       }
-      if (actorIdentity.endsWith("-reviewer") && last?.role === "user" && lastText.includes("FAKE_REVIEW_REQUEST_1")) {
+      if (role === "reviewer" && last?.role === "user" && lastText.includes("FAKE_REVIEW_REQUEST_1")) {
         return streamTool(model, "intercom", { action: "reply", message: "FINDING: repair the fake regression" });
       }
-      if (!actorIdentity.endsWith("-reviewer") && last?.role === "toolResult" && lastText.includes("FINDING:")) {
+      if (role === "developer" && last?.role === "toolResult" && lastText.includes("FINDING:")) {
         if (!reviewerId) return streamText(model, "missing reviewer id");
         return streamTool(model, "intercom", { action: "ask", to: reviewerId, message: "FAKE_REVIEW_REQUEST_2 repaired" });
       }
-      if (actorIdentity.endsWith("-reviewer") && last?.role === "user" && lastText.includes("FAKE_REVIEW_REQUEST_2")) {
+      if (role === "reviewer" && last?.role === "user" && lastText.includes("FAKE_REVIEW_REQUEST_2")) {
         return streamTool(model, "intercom", { action: "reply", message: "No findings." });
       }
-      if (!actorIdentity.endsWith("-reviewer") && last?.role === "toolResult" && lastText.includes("No findings.")) {
+      if (role === "developer" && last?.role === "toolResult" && lastText.includes("No findings.")) {
         return streamText(model, "repair-review-loop-complete");
       }
       return streamText(model, "pair-smoke-ready");

@@ -1,6 +1,6 @@
 {
   "name": "pi-intercom-review-pair",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Pair developer and reviewer Pi sessions for an issue through pi-intercom.",
   "type": "module",
   "main": "index.ts",

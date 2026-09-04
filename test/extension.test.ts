@@ -91,6 +91,7 @@ class FakePi {
     this.broker = broker;
     this.session = session;
     this.context = {
+      cwd: this.session.cwd,
       hasUI: true,
       isIdle: () => true,
       sessionManager: { getSessionId: () => this.session.id },
@@ -98,7 +99,7 @@ class FakePi {
         input: async () => this.inputValue,
         select: async (_title: string, options: string[]) => {
           this.selectOptions.push([...options]);
-          return options.includes("Show unnamed sessions…") ? "Show unnamed sessions…" : options[0];
+          return options[0];
         },
         confirm: async (title: string, message: string) => {
           this.confirmations.push({ title, message });
@@ -146,25 +147,21 @@ class FakePi {
   }
 }
 
-function addExtension(broker: FakeBroker, session: SessionRecord, actorIdentity: string, project = "billing"): FakePi {
-  const previousProject = process.env.AI_AGENTS_SANDBOX_PROJECT_NAME;
-  const previousActor = process.env.AI_AGENTS_SANDBOX_ACTOR_IDENTITY;
-  process.env.AI_AGENTS_SANDBOX_PROJECT_NAME = project;
-  process.env.AI_AGENTS_SANDBOX_ACTOR_IDENTITY = actorIdentity;
+function addExtension(broker: FakeBroker, session: SessionRecord): FakePi {
   const pi = new FakePi(broker, session);
   reviewPairExtension(pi as never);
-  if (previousProject === undefined) delete process.env.AI_AGENTS_SANDBOX_PROJECT_NAME;
-  else process.env.AI_AGENTS_SANDBOX_PROJECT_NAME = previousProject;
-  if (previousActor === undefined) delete process.env.AI_AGENTS_SANDBOX_ACTOR_IDENTITY;
-  else process.env.AI_AGENTS_SANDBOX_ACTOR_IDENTITY = previousActor;
   return pi;
 }
 
 async function setup(reviewPromptFailures = 0): Promise<{ base: FakePi; reviewer: FakePi; broker: FakeBroker; restore(): void }> {
-  const previousScope = process.env.PI_INTERCOM_SCOPE_ID;
-  const previousSessionId = process.env.PI_INTERCOM_SESSION_ID;
-  process.env.PI_INTERCOM_SCOPE_ID = "billing";
-  delete process.env.PI_INTERCOM_SESSION_ID;
+  const environmentNames = [
+    "AI_AGENTS_SANDBOX_PROJECT_NAME",
+    "AI_AGENTS_SANDBOX_ACTOR_IDENTITY",
+    "PI_INTERCOM_SCOPE_ID",
+    "PI_INTERCOM_SESSION_ID",
+  ];
+  const previousEnvironment = new Map(environmentNames.map((name) => [name, process.env[name]]));
+  for (const name of environmentNames) delete process.env[name];
 
   const broker = new FakeBroker();
   const base = addExtension(broker, {
@@ -173,14 +170,14 @@ async function setup(reviewPromptFailures = 0): Promise<{ base: FakePi; reviewer
     cwd: "/project/repo",
     model: "gpt",
     status: "idle",
-  }, "gpt");
+  });
   const reviewer = addExtension(broker, {
     id: "reviewer-session",
     runtimeFallbackAlias: true,
     cwd: "/project/repo",
     model: "gpt",
     status: "idle",
-  }, "gpt-reviewer");
+  });
   reviewer.promptFailures = reviewPromptFailures;
   broker.addSession({
     id: "unrelated-unnamed",
@@ -197,27 +194,28 @@ async function setup(reviewPromptFailures = 0): Promise<{ base: FakePi; reviewer
     reviewer,
     broker,
     restore() {
-      if (previousScope === undefined) delete process.env.PI_INTERCOM_SCOPE_ID;
-      else process.env.PI_INTERCOM_SCOPE_ID = previousScope;
-      if (previousSessionId === undefined) delete process.env.PI_INTERCOM_SESSION_ID;
-      else process.env.PI_INTERCOM_SESSION_ID = previousSessionId;
+      for (const [name, value] of previousEnvironment) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     },
   };
 }
 
-test("pairs live sessions, hides unnamed peers, and reruns without duplicate prompts", async () => {
+test("pairs the invoking session with the sole capable peer without environment metadata", async () => {
   const scenario = await setup();
   try {
     scenario.base.inputValue = "#0710";
     await scenario.base.invoke("");
 
-    assert.equal(scenario.base.session.name, "billing-710");
-    assert.equal(scenario.reviewer.session.name, "billing-710-review");
+    assert.equal(scenario.base.session.name, "repo-710");
+    assert.equal(scenario.reviewer.session.name, "repo-710-review");
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 1);
-    assert.deepEqual(scenario.base.selectOptions[0], ["Show unnamed sessions…"]);
+    assert.equal(scenario.base.selectOptions.length, 0);
     assert.match(scenario.base.confirmations[0]!.message, /developer-session/);
     assert.match(scenario.base.confirmations[0]!.message, /reviewer-session/);
+    assert.match(scenario.base.confirmations[0]!.message, /\/project\/repo · gpt · idle/);
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair active/);
 
     await scenario.base.invoke("710");
@@ -229,12 +227,41 @@ test("pairs live sessions, hides unnamed peers, and reruns without duplicate pro
   }
 });
 
-test("can coordinate the pair from the reviewer session", async () => {
+test("asks for the reviewer when multiple capable peers are live", async () => {
+  const scenario = await setup();
+  try {
+    const other = addExtension(scenario.broker, {
+      id: "another-session",
+      runtimeFallbackAlias: true,
+      cwd: "/another/project",
+      model: "claude",
+      status: "idle",
+    });
+    await other.start();
+
+    await scenario.base.invoke("714");
+
+    assert.equal(scenario.base.selectOptions.length, 1);
+    assert.equal(scenario.base.selectOptions[0]!.length, 2);
+    assert.match(scenario.base.selectOptions[0]!.join("\n"), /another-session/);
+    assert.match(scenario.base.selectOptions[0]!.join("\n"), /reviewer-session/);
+    assert.match(scenario.base.selectOptions[0]!.join("\n"), /\/another\/project · claude · idle/);
+    assert.equal(scenario.base.session.name, "repo-714");
+    assert.equal(other.session.name, "repo-714-review");
+    assert.equal(scenario.reviewer.session.name, undefined);
+  } finally {
+    scenario.restore();
+  }
+});
+
+test("always treats the invoking session as developer", async () => {
   const scenario = await setup();
   try {
     await scenario.reviewer.invoke("713");
-    assert.equal(scenario.base.session.name, "billing-713");
-    assert.equal(scenario.reviewer.session.name, "billing-713-review");
+    assert.equal(scenario.reviewer.session.name, "repo-713");
+    assert.equal(scenario.base.session.name, "repo-713-review");
+    assert.match(scenario.reviewer.prompts[0]!, /You are the developer/);
+    assert.match(scenario.base.prompts[0]!, /You are the read-only reviewer/);
     assert.match(scenario.reviewer.notifications.at(-1)!.message, /Review pair active/);
   } finally {
     scenario.restore();
@@ -246,7 +273,7 @@ test("reports each side on partial failure and converges on rerun", async () => 
   try {
     await scenario.base.invoke("711");
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair incomplete/);
-    assert.match(scenario.base.notifications.at(-1)!.message, /Developer billing-711: ready/);
+    assert.match(scenario.base.notifications.at(-1)!.message, /Developer repo-711: ready/);
     assert.match(scenario.base.notifications.at(-1)!.message, /Reviewer .*prompt injection failed/);
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 0);
@@ -282,7 +309,7 @@ test("rejects an ambiguous duplicate target name before confirmation", async () 
   try {
     scenario.broker.addSession({
       id: "existing-name",
-      name: "billing-712-review",
+      name: "repo-712-review",
       cwd: "/project/repo",
       model: "gpt",
       status: "idle",
