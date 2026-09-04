@@ -4,11 +4,12 @@ import {
   assignmentId,
   candidateSessions,
   developerPrompt,
+  FALLBACK_PROJECT_NAMES,
   findNameConflict,
   formatCandidate,
   normalizeIssueNumber,
   parsePairMessage,
-  projectName,
+  randomProjectName,
   reviewerPrompt,
   targetNames,
   type LiveSession,
@@ -22,9 +23,9 @@ test("normalizes numeric issue input and rejects invalid values", () => {
   }
 });
 
-test("derives names from the working directory and issue", () => {
-  assert.equal(projectName("/work/billing"), "billing");
-  assert.equal(projectName("/"), "project");
+test("builds names from explicit or random project names", () => {
+  assert.equal(FALLBACK_PROJECT_NAMES.length, 50);
+  assert.ok(FALLBACK_PROJECT_NAMES.includes(randomProjectName()));
   assert.deepEqual(targetNames("billing", "710"), {
     developer: "billing-710",
     reviewer: "billing-710-review",

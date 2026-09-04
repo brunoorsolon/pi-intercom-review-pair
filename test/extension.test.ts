@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import reviewPairExtension, { INTERCOM_REGISTER_EVENT } from "../index.ts";
-import { assignmentId } from "../src/core.ts";
+import { assignmentId, FALLBACK_PROJECT_NAMES } from "../src/core.ts";
 
 class EventBus {
   listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -83,7 +83,8 @@ class FakePi {
   selectOptions: string[][] = [];
   confirmations: Array<{ title: string; message: string }> = [];
   promptFailures = 0;
-  inputValue: string | undefined;
+  inputValues: Array<string | undefined> = [];
+  inputRequests: Array<{ title: string; placeholder: string }> = [];
   broker: FakeBroker;
   session: SessionRecord;
   context: Record<string, unknown>;
@@ -97,7 +98,10 @@ class FakePi {
       isIdle: () => true,
       sessionManager: { getSessionId: () => this.session.id },
       ui: {
-        input: async () => this.inputValue,
+        input: async (title: string, placeholder: string) => {
+          this.inputRequests.push({ title, placeholder });
+          return this.inputValues.shift();
+        },
         select: async (_title: string, options: string[]) => {
           this.selectOptions.push([...options]);
           return options[0];
@@ -206,23 +210,40 @@ async function setup(reviewPromptFailures = 0): Promise<{ base: FakePi; reviewer
 test("pairs the invoking session with the sole capable peer without environment metadata", async () => {
   const scenario = await setup();
   try {
-    scenario.base.inputValue = "#0710";
+    scenario.base.inputValues.push("#0710", "billing");
     await scenario.base.invoke("");
 
-    assert.equal(scenario.base.session.name, "repo-710");
-    assert.equal(scenario.reviewer.session.name, "repo-710-review");
+    assert.equal(scenario.base.session.name, "billing-710");
+    assert.equal(scenario.reviewer.session.name, "billing-710-review");
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 1);
+    assert.deepEqual(scenario.base.inputRequests.map(({ title }) => title), ["Issue number", "Project name (optional)"]);
     assert.equal(scenario.base.selectOptions.length, 0);
     assert.match(scenario.base.confirmations[0]!.message, /developer-session/);
     assert.match(scenario.base.confirmations[0]!.message, /reviewer-session/);
     assert.match(scenario.base.confirmations[0]!.message, /\/project\/repo · gpt · idle/);
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair active/);
 
-    await scenario.base.invoke("710");
+    await scenario.base.invoke("710 billing");
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 1);
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair active/);
+  } finally {
+    scenario.restore();
+  }
+});
+
+test("uses a random project name when the optional project input is blank", async () => {
+  const scenario = await setup();
+  try {
+    scenario.base.inputValues.push("");
+    await scenario.base.invoke("716");
+
+    const developerName = scenario.base.session.name!;
+    const project = developerName.slice(0, -"-716".length);
+    assert.ok((FALLBACK_PROJECT_NAMES as readonly string[]).includes(project));
+    assert.equal(scenario.reviewer.session.name, `${project}-716-review`);
+    assert.deepEqual(scenario.base.inputRequests.map(({ title }) => title), ["Project name (optional)"]);
   } finally {
     scenario.restore();
   }
@@ -240,15 +261,15 @@ test("asks for the reviewer when multiple capable peers are live", async () => {
     });
     await other.start();
 
-    await scenario.base.invoke("714");
+    await scenario.base.invoke("714 billing");
 
     assert.equal(scenario.base.selectOptions.length, 1);
     assert.equal(scenario.base.selectOptions[0]!.length, 2);
     assert.match(scenario.base.selectOptions[0]!.join("\n"), /another-session/);
     assert.match(scenario.base.selectOptions[0]!.join("\n"), /reviewer-session/);
     assert.match(scenario.base.selectOptions[0]!.join("\n"), /\/another\/project · claude · idle/);
-    assert.equal(scenario.base.session.name, "repo-714");
-    assert.equal(other.session.name, "repo-714-review");
+    assert.equal(scenario.base.session.name, "billing-714");
+    assert.equal(other.session.name, "billing-714-review");
     assert.equal(scenario.reviewer.session.name, undefined);
   } finally {
     scenario.restore();
@@ -258,9 +279,9 @@ test("asks for the reviewer when multiple capable peers are live", async () => {
 test("always treats the invoking session as developer", async () => {
   const scenario = await setup();
   try {
-    await scenario.reviewer.invoke("713");
-    assert.equal(scenario.reviewer.session.name, "repo-713");
-    assert.equal(scenario.base.session.name, "repo-713-review");
+    await scenario.reviewer.invoke("713 billing");
+    assert.equal(scenario.reviewer.session.name, "billing-713");
+    assert.equal(scenario.base.session.name, "billing-713-review");
     assert.match(scenario.reviewer.prompts[0]!, /You are the developer/);
     assert.match(scenario.base.prompts[0]!, /You are the read-only reviewer/);
     assert.match(scenario.reviewer.notifications.at(-1)!.message, /Review pair active/);
@@ -296,14 +317,14 @@ test("ignores assignments not sent by the claimed developer", async () => {
 test("reports each side on partial failure and converges on rerun", async () => {
   const scenario = await setup(1);
   try {
-    await scenario.base.invoke("711");
+    await scenario.base.invoke("711 billing");
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair incomplete/);
-    assert.match(scenario.base.notifications.at(-1)!.message, /Developer repo-711: ready/);
+    assert.match(scenario.base.notifications.at(-1)!.message, /Developer billing-711: ready/);
     assert.match(scenario.base.notifications.at(-1)!.message, /Reviewer .*prompt injection failed/);
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 0);
 
-    await scenario.base.invoke("711");
+    await scenario.base.invoke("711 billing");
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair active/);
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 1);
@@ -316,7 +337,7 @@ test("rejects invalid issue input before side effects", async () => {
   const scenario = await setup();
   try {
     await scenario.base.invoke("issue-710");
-    scenario.base.inputValue = "";
+    scenario.base.inputValues.push("");
     await scenario.base.invoke("");
     assert.equal(scenario.base.session.name, undefined);
     assert.equal(scenario.reviewer.session.name, undefined);
@@ -334,12 +355,12 @@ test("rejects an ambiguous duplicate target name before confirmation", async () 
   try {
     scenario.broker.addSession({
       id: "existing-name",
-      name: "repo-712-review",
+      name: "billing-712-review",
       cwd: "/project/repo",
       model: "gpt",
       status: "idle",
     });
-    await scenario.base.invoke("712");
+    await scenario.base.invoke("712 billing");
     assert.equal(scenario.base.prompts.length, 0);
     assert.equal(scenario.reviewer.prompts.length, 0);
     assert.equal(scenario.base.confirmations.length, 0);

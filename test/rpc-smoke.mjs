@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createConnection } from "node:net";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,7 @@ if (!intercomExtension) throw new Error("Set PI_INTERCOM_EXTENSION to pi-interco
 const piBin = process.env.PI_BIN || "pi";
 const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 const brokerSocket = join(agentDir, "intercom", "broker.sock");
-const project = basename(root);
+const project = "review-pair";
 let requestNumber = 0;
 
 async function requireExistingBroker() {
@@ -147,7 +147,7 @@ const [developer, reviewer, unrelated] = clients;
 try {
   await Promise.all(clients.map((client) => client.request({ type: "get_commands" })));
   await new Promise((resolveWait) => setTimeout(resolveWait, 500));
-  await developer.request({ type: "prompt", message: "/pair-review #0710" });
+  await developer.request({ type: "prompt", message: `/pair-review #0710 ${project}` });
   await Promise.all(clients.map((client) => client.waitIdle()));
   assert.equal((await developer.state()).sessionName, `${project}-710`);
   assert.equal((await reviewer.state()).sessionName, `${project}-710-review`);
@@ -160,7 +160,7 @@ try {
   assert.equal(occurrences(firstDeveloperMessages, "You are the developer for issue #710"), 1);
   assert.equal(occurrences(firstReviewerMessages, "You are the read-only reviewer for issue #710"), 1);
 
-  await developer.request({ type: "prompt", message: "/pair-review 710" });
+  await developer.request({ type: "prompt", message: `/pair-review 710 ${project}` });
   await Promise.all(clients.map((client) => client.waitIdle()));
   assert.equal(occurrences(await developer.messages(), "You are the developer for issue #710"), 1);
   assert.equal(occurrences(await reviewer.messages(), "You are the read-only reviewer for issue #710"), 1);
