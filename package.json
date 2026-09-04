@@ -1,0 +1,38 @@
+{
+  "name": "pi-intercom-review-pair",
+  "version": "1.0.0",
+  "description": "Pair developer and reviewer Pi sessions for an issue through pi-intercom.",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "src/**/*.ts"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-intercom",
+    "code-review"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brunoorsolon/pi-intercom-review-pair.git"
+  },
+  "bugs": {
+    "url": "https://github.com/brunoorsolon/pi-intercom-review-pair/issues"
+  },
+  "homepage": "https://github.com/brunoorsolon/pi-intercom-review-pair#readme",
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-concurrency=1 test/*.test.ts",
+    "test:rpc": "node test/rpc-smoke.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "pi-intercom": ">=0.12.1"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
