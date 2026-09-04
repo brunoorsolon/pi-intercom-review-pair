@@ -131,7 +131,7 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
   };
 
   const applyAssignment = async (message: AssignmentMessage, fromSessionId: string): Promise<void> => {
-    if (!runtimeContext || !channel || message.coordinatorId !== fromSessionId) return;
+    if (!runtimeContext || !channel || message.coordinatorId !== fromSessionId || message.developerId !== fromSessionId) return;
 
     const issue = normalizeIssueNumber(message.issue);
     if (issue !== message.issue) return;

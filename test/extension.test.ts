@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import reviewPairExtension, { INTERCOM_REGISTER_EVENT } from "../index.ts";
+import { assignmentId } from "../src/core.ts";
 
 class EventBus {
   listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -263,6 +264,30 @@ test("always treats the invoking session as developer", async () => {
     assert.match(scenario.reviewer.prompts[0]!, /You are the developer/);
     assert.match(scenario.base.prompts[0]!, /You are the read-only reviewer/);
     assert.match(scenario.reviewer.notifications.at(-1)!.message, /Review pair active/);
+  } finally {
+    scenario.restore();
+  }
+});
+
+test("ignores assignments not sent by the claimed developer", async () => {
+  const scenario = await setup();
+  try {
+    scenario.broker.publish("reviewer-session", {
+      version: 2,
+      type: "assign",
+      assignmentId: assignmentId("repo", "715", "developer-session", "reviewer-session"),
+      coordinatorId: "reviewer-session",
+      project: "repo",
+      issue: "715",
+      developerId: "developer-session",
+      reviewerId: "reviewer-session",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(scenario.base.session.name, undefined);
+    assert.equal(scenario.reviewer.session.name, undefined);
+    assert.equal(scenario.base.prompts.length, 0);
+    assert.equal(scenario.reviewer.prompts.length, 0);
   } finally {
     scenario.restore();
   }
