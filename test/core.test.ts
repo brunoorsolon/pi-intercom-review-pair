@@ -80,12 +80,14 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   assert.match(developer, /full SHA/);
   assert.match(developer, /fix valid findings/);
   assert.match(developer, /silence and timeouts are not approval/);
+  assert.match(developer, /post the result on the pull request/);
 
   const reviewer = reviewerPrompt("billing", "710", { id: "developer-id", name: "billing-710" });
   assert.match(reviewer, /read-only reviewer/);
   assert.match(reviewer, /exact candidate revision/);
   assert.match(reviewer, /action: "reply"/);
   assert.match(reviewer, /No findings\./);
+  assert.match(reviewer, /post the result on the pull request/);
 });
 
 test("parses only bounded protocol messages", () => {

@@ -106,6 +106,7 @@ export function developerPrompt(project: string, issue: string, reviewer: PairTa
     "Work only on the issue scope. Trace affected callers, implement the root fix, and run the relevant checks.",
     "When the candidate is committed and checked, request review with " +
       `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>. Base: <base SHA>. Checks: <commands/results>. Workspace artifacts: <paths/digests>." }).`,
+    "Intercom carries the conversation between the two sessions; it is not the published record. When the work has a pull request, post the result on the pull request through the standard review process this repository already expects.",
     "If the sessions use separate worktrees, provide a pushed revision, forge diff, or shared workspace path that lets the reviewer inspect the exact candidate rather than their local branch.",
     "Verify each finding, fix valid findings, rerun affected checks, and request review again. Finish only after the reviewer explicitly reports no findings or requests a human decision; silence and timeouts are not approval.",
   ].join("\n\n");
@@ -118,6 +119,7 @@ export function reviewerPrompt(project: string, issue: string, developer: PairTa
     "Wait for the developer's review request, then inspect the exact candidate revision or shared workspace artifact it identifies. Do not assume your local worktree contains the candidate.",
     "Review the full diff and affected callers for correctness, regressions, security, missing validation, and unrequested scope. Do not modify the implementation.",
     "Return findings ordered by severity with exact file and line evidence. Reply through the active intercom path with `intercom({ action: \"reply\", message: \"...\" })`.",
+    "Intercom is the developer's channel, not the published record. When the candidate has a pull request, post the result on the pull request through the standard review process as well.",
     "After repairs, review the new candidate again. When nothing remains, reply explicitly with `No findings.`; request a human decision when the issue cannot be resolved from the settled scope.",
   ].join("\n\n");
 }
