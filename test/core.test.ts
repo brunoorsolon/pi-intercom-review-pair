@@ -9,6 +9,7 @@ import {
   formatCandidate,
   normalizeIssueNumber,
   parsePairMessage,
+  processMarker,
   randomProjectName,
   reviewerPrompt,
   targetNames,
@@ -81,6 +82,7 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   assert.match(developer, /fix valid findings/);
   assert.match(developer, /silence and timeouts are not approval/);
   assert.match(developer, /post the result on the pull request/);
+  assert.ok(developer.includes(processMarker("developer")));
 
   const reviewer = reviewerPrompt("billing", "710", { id: "developer-id", name: "billing-710" });
   assert.match(reviewer, /read-only reviewer/);
@@ -88,6 +90,8 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   assert.match(reviewer, /action: "reply"/);
   assert.match(reviewer, /No findings\./);
   assert.match(reviewer, /post the result on the pull request/);
+  assert.ok(reviewer.includes(processMarker("reviewer")));
+  assert.notEqual(processMarker("developer"), processMarker("reviewer"));
 });
 
 test("parses only bounded protocol messages", () => {

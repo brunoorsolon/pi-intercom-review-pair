@@ -32,6 +32,17 @@ After confirmation, the command assigns these names:
 
 Both targets receive self-contained role instructions. The developer asks the exact reviewer session to inspect a committed candidate, verifies findings, repairs valid ones, and repeats until the reviewer explicitly returns `No findings.` or requests a human decision.
 
+## Process markers
+
+Both role prompts end with a non-typable marker owned by this extension:
+
+```text
+⟦pi-intercom-review-pair:developer⟧
+⟦pi-intercom-review-pair:reviewer⟧
+```
+
+`processMarker(role)` in `src/core.ts` produces them, so the exact characters should be matched through that function rather than retyped. The extension assigns the marker no meaning; a routing layer can match it in an injected prompt to run repository-specific process, for example loading a work-issue or review skill.
+
 ## Development
 
 ```bash
