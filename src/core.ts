@@ -113,7 +113,8 @@ export function developerPrompt(project: string, issue: string, reviewer: PairTa
     `Your reviewer is ${reviewer.name} (exact intercom session ID ${reviewer.id}).`,
     "Work only on the issue scope. Trace affected callers, implement the root fix, and run the relevant checks.",
     "When the candidate is committed and checked, request review with " +
-      `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>. Base: <base SHA>. Checks: <commands/results>. Workspace artifacts: <paths/digests>." }).`,
+      `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>. Base: <base SHA>. Pull request: <number or URL when one exists>. Checks: <commands/results>. Workspace artifacts: <paths/digests>." }).`,
+    "Name the pull request in that request whenever the work has one, so the reviewer posts the result to the right place and does not have to hunt for it.",
     "Intercom carries the conversation between the two sessions; it is not the published record. When the work has a pull request, post the result on the pull request through whichever standard review process this repository uses.",
     processMarker("developer"),
     "If the sessions use separate worktrees, provide a pushed revision, forge diff, or shared workspace path that lets the reviewer inspect the exact candidate rather than their local branch.",
@@ -128,7 +129,7 @@ export function reviewerPrompt(project: string, issue: string, developer: PairTa
     "Wait for the developer's review request, then inspect the exact candidate revision or shared workspace artifact it identifies. Do not assume your local worktree contains the candidate.",
     "Review the full diff and affected callers for correctness, regressions, security, missing validation, and unrequested scope. Do not modify the implementation.",
     "Return findings ordered by severity with exact file and line evidence. Reply through the active intercom path with `intercom({ action: \"reply\", message: \"...\" })`.",
-    "Intercom is the developer's channel, not the published record. When the candidate has a pull request, post the result on the pull request through this repository's standard review process as well.",
+    "Intercom is the developer's channel, not the published record. When the candidate has a pull request, post the result on the pull request named in the review request through this repository's standard review process as well; when the request omits one, locate it the usual way.",
     processMarker("reviewer"),
     "After repairs, review the new candidate again. When nothing remains, reply explicitly with `No findings.`; request a human decision when the issue cannot be resolved from the settled scope.",
   ].join("\n\n");

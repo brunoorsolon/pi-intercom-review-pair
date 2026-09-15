@@ -79,6 +79,7 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   const developer = developerPrompt("billing", "710", { id: "reviewer-id", name: "billing-710-review" });
   assert.match(developer, /to: "reviewer-id"/);
   assert.match(developer, /full SHA/);
+  assert.match(developer, /Pull request: <number or URL when one exists>/);
   assert.match(developer, /fix valid findings/);
   assert.match(developer, /silence and timeouts are not approval/);
   assert.match(developer, /post the result on the pull request/);
@@ -89,7 +90,7 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   assert.match(reviewer, /exact candidate revision/);
   assert.match(reviewer, /action: "reply"/);
   assert.match(reviewer, /No findings\./);
-  assert.match(reviewer, /post the result on the pull request/);
+  assert.match(reviewer, /post the result on the pull request named in the review request/);
   assert.ok(reviewer.includes(processMarker("reviewer")));
   assert.notEqual(processMarker("developer"), processMarker("reviewer"));
 });
