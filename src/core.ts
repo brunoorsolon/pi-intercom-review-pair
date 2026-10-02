@@ -99,13 +99,24 @@ export function formatCandidate(session: LiveSession): string {
   return `${name} — ${session.cwd} · ${session.model}${status} [${session.id}]`;
 }
 
+export type PairRole = "developer" | "reviewer";
+
+// Integration hook: routing layers can match these non-typable markers to drive
+// repository-specific process, for example loading a work-issue or review skill.
+export function processMarker(role: PairRole): string {
+  return `⟦pi-intercom-review-pair:${role}⟧`;
+}
+
 export function developerPrompt(project: string, issue: string, reviewer: PairTarget): string {
   return [
     `You are the developer for issue #${issue} in project ${project}.`,
     `Your reviewer is ${reviewer.name} (exact intercom session ID ${reviewer.id}).`,
     "Work only on the issue scope. Trace affected callers, implement the root fix, and run the relevant checks.",
     "When the candidate is committed and checked, request review with " +
-      `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>. Base: <base SHA>. Checks: <commands/results>. Workspace artifacts: <paths/digests>." }).`,
+      `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>. Base: <base SHA>. Pull request: <number or URL when one exists>. Checks: <commands/results>. Workspace artifacts: <paths/digests>." }).`,
+    "Name the pull request in that request whenever the work has one, so the reviewer posts the result to the right place and does not have to hunt for it.",
+    "Intercom carries the conversation between the two sessions; it is not the published record. When the work has a pull request, post the result on the pull request through whichever standard review process this repository uses.",
+    processMarker("developer"),
     "If the sessions use separate worktrees, provide a pushed revision, forge diff, or shared workspace path that lets the reviewer inspect the exact candidate rather than their local branch.",
     "Send the review ask from this session, never from a subagent. If an ask is cancelled or times out, the reviewer may still deliver its result as a normal intercom message; treat that message as the reply and do not ask again for the same candidate.",
     "Verify each finding, fix valid findings, rerun affected checks, and request review again. Finish only after the reviewer explicitly reports no findings or requests a human decision; silence and timeouts are not approval.",
@@ -121,6 +132,8 @@ export function reviewerPrompt(project: string, issue: string, developer: PairTa
     "Return findings ordered by severity with exact file and line evidence. Reply through the active intercom path with `intercom({ action: \"reply\", message: \"...\" })`.",
     "If the reply is not delivered, the developer's ask is no longer open. Send the same message with " +
       `intercom({ action: "send", to: ${JSON.stringify(developer.id)}, message: "..." }) instead; never drop findings.`,
+    "Intercom is the developer's channel, not the published record. When the candidate has a pull request, post the result on the pull request named in the review request through this repository's standard review process as well; when the request omits one, locate it the usual way.",
+    processMarker("reviewer"),
     "After repairs, review the new candidate again. When nothing remains, reply explicitly with `No findings.`; request a human decision when the issue cannot be resolved from the settled scope.",
   ].join("\n\n");
 }
