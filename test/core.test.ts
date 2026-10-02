@@ -89,6 +89,7 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   assert.match(reviewer, /read-only reviewer/);
   assert.match(reviewer, /exact candidate revision/);
   assert.match(reviewer, /action: "reply"/);
+  assert.match(reviewer, /action: "send", to: "developer-id"/);
   assert.match(reviewer, /No findings\./);
   assert.match(reviewer, /post the result on the pull request named in the review request/);
   assert.ok(reviewer.includes(processMarker("reviewer")));
