@@ -32,6 +32,8 @@ After confirmation, the command assigns these names:
 
 Both targets receive self-contained role instructions. The developer asks the exact reviewer session to inspect a committed candidate, verifies findings, repairs valid ones, and repeats until the reviewer explicitly returns `No findings.` or requests a human decision.
 
+When the work has a pull request, both roles post the full review request and findings there and send each other only the candidate SHA or verdict plus the comment URL over intercom. Without a pull request, intercom carries the full content.
+
 ## Process markers
 
 Both role prompts end with a non-typable marker owned by this extension:
