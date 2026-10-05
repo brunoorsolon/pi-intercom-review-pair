@@ -21,7 +21,15 @@ From the session that should become the developer, run:
 /pair-review 999 billing
 ```
 
-Omit the issue number to enter it interactively. Omit the project name to enter it interactively; leave that prompt blank to use a random common word. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID.
+Omit the issue number to enter it interactively. Omit the project name to enter it interactively; leave that prompt blank to use a random common word. Right after it, the command asks for a pull request; leave that blank for a new review. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID.
+
+Declare an in-progress review up front with `--pr`:
+
+```text
+/pair-review 999 billing --pr 1234
+```
+
+`--pr` skips the pull-request prompt and tells both roles the named pull request is already under review, so they read the current branch, existing comments, and open findings instead of starting the issue from scratch. The reference becomes part of the pairing identity: re-running with a different one re-briefs both sessions, and re-running with the same one stays idempotent.
 
 After confirmation, the command assigns these names:
 
