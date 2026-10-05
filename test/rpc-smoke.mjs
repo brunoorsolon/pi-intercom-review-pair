@@ -82,7 +82,8 @@ class RpcClient {
       } else if (message.method === "confirm") {
         this.send({ type: "extension_ui_response", id: message.id, confirmed: true });
       } else if (["input", "editor"].includes(message.method)) {
-        this.send({ type: "extension_ui_response", id: message.id, value: "710" });
+        const value = message.title === "Pull request (optional)" ? "" : "710";
+        this.send({ type: "extension_ui_response", id: message.id, value });
       }
       return;
     }

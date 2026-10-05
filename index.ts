@@ -135,7 +135,13 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
 
     const issue = normalizeIssueNumber(message.issue);
     if (issue !== message.issue) return;
-    const expectedAssignmentId = assignmentId(message.project, issue, message.developerId, message.reviewerId);
+    const expectedAssignmentId = assignmentId(
+      message.project,
+      issue,
+      message.developerId,
+      message.reviewerId,
+      message.pullRequest,
+    );
     if (message.assignmentId !== expectedAssignmentId) return;
 
     const self = currentSessionId();
@@ -160,9 +166,10 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
       const developer = { id: message.developerId, name: names.developer };
       const reviewer = { id: message.reviewerId, name: names.reviewer };
       pi.setSessionName(expectedName);
+      const context = message.pullRequest ? { pullRequest: message.pullRequest } : {};
       const prompt = isDeveloper
-        ? developerPrompt(message.project, issue, reviewer)
-        : reviewerPrompt(message.project, issue, developer);
+        ? developerPrompt(message.project, issue, reviewer, context)
+        : reviewerPrompt(message.project, issue, developer, context);
       pi.sendUserMessage(prompt, runtimeContext.isIdle() ? undefined : { deliverAs: "followUp" });
 
       const ack: AcknowledgementMessage = {
@@ -307,7 +314,24 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
     }
     commandRunning = true;
     try {
-      const [issueArgument = "", ...projectArguments] = args.trim().split(/\s+/);
+      let pullRequest: string | undefined;
+      let pullRequestGiven = false;
+      const positionals: string[] = [];
+      const tokens = args.trim() ? args.trim().split(/\s+/) : [];
+      for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index]!;
+        if (token === "--pr") {
+          const value = tokens[index + 1];
+          if (!value || value.startsWith("-")) throw new Error("--pr requires a pull request reference.");
+          pullRequest = value;
+          pullRequestGiven = true;
+          index += 1;
+          continue;
+        }
+        if (token.startsWith("--")) throw new Error(`Unknown option ${token}.`);
+        positionals.push(token);
+      }
+      const [issueArgument = "", ...projectArguments] = positionals;
       let issueInput = issueArgument;
       if (!issueInput) {
         const entered = await ctx.ui.input("Issue number", "999");
@@ -321,6 +345,12 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
         const entered = await ctx.ui.input("Project name (optional)", "Leave blank for a random word");
         if (entered === undefined) return;
         project = entered.trim() || randomProjectName();
+      }
+
+      if (!pullRequestGiven) {
+        const entered = await ctx.ui.input("Pull request (optional)", "Leave blank for a new review");
+        if (entered === undefined) return;
+        pullRequest = entered.trim() || undefined;
       }
 
       const { sessions, self } = await discover();
@@ -340,11 +370,12 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
         [
           `Developer: ${formatCandidate(developer)} → ${names.developer}`,
           `Reviewer: ${formatCandidate(reviewer)} → ${names.reviewer}`,
+          `Pull request: ${pullRequest ? `${pullRequest} (continuing review)` : "none (new review)"}`,
         ].join("\n"),
       );
       if (!confirmed) return;
 
-      const id = assignmentId(project, issue, developer.id, reviewer.id);
+      const id = assignmentId(project, issue, developer.id, reviewer.id, pullRequest);
       const assignment: AssignmentMessage = {
         version: 2,
         type: "assign",
@@ -354,6 +385,7 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
         issue,
         developerId: developer.id,
         reviewerId: reviewer.id,
+        ...(pullRequest ? { pullRequest } : {}),
       };
       const results = await awaitAcknowledgements(assignment, [developer.id, reviewer.id]);
       const verifyName = (result: AckResult | undefined, expectedName: string): AckResult | undefined => {
