@@ -40,7 +40,8 @@ class ReviewerPicker extends Container {
   }
 
   render(width: number): string[] {
-    this.list.maxVisible = this.rows();
+    // maxVisible is private in SelectList's types but drives its viewport; refresh it on resize.
+    (this.list as unknown as { maxVisible: number }).maxVisible = this.rows();
     return super.render(width);
   }
 
@@ -48,9 +49,8 @@ class ReviewerPicker extends Container {
     if (this.finished) return;
     const pageUp = this.keybindings.matches(data, "tui.select.pageUp");
     if (pageUp || this.keybindings.matches(data, "tui.select.pageDown")) {
-      const direction = pageUp ? -1 : 1;
-      const current = this.list.filteredItems.indexOf(this.list.getSelectedItem()!);
-      const next = (current + direction * this.list.maxVisible + this.candidates.length) % this.candidates.length;
+      const current = this.candidates.findIndex((session) => session.id === this.list.getSelectedItem()?.value);
+      const next = (current + (pageUp ? -1 : 1) * this.rows() + this.candidates.length) % this.candidates.length;
       this.list.setSelectedIndex(next);
       return;
     }
