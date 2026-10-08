@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assignmentId,
+  candidateDescription,
+  candidateLabel,
   candidateSessions,
   developerPrompt,
   FALLBACK_PROJECT_NAMES,
@@ -13,6 +15,7 @@ import {
   randomProjectName,
   reviewerPrompt,
   targetNames,
+  visibleCandidateRows,
   type LiveSession,
 } from "../src/core.ts";
 
@@ -86,6 +89,23 @@ test("formats candidates with location and runtime details", () => {
     status: "idle",
   });
   assert.equal(formatted, "Unnamed session — /work/billing · gpt-5 · idle [session-id]");
+});
+
+test("keeps picker rows to one line each and fits them inside the terminal", () => {
+  const session: LiveSession = {
+    id: "01a11ccd-204f-7510-befc-dc8e36c0b3ff",
+    cwd: "/home/bruno/ai-agents-sandbox/data/projects/billing-service",
+    model: "space-bunny-free",
+    status: "tool:bash",
+  };
+  assert.equal(candidateLabel(session), "Unnamed 01a11ccd");
+  assert.equal(candidateLabel({ ...session, name: "billing-714-review" }), "billing-714-review");
+  assert.equal(candidateDescription(session), "…/projects/billing-service · space-bunny-free · tool:bash · id 01a11ccd");
+
+  // More candidates than rows: the viewport scrolls instead of overflowing the screen.
+  assert.equal(visibleCandidateRows(24, 40), 18);
+  assert.equal(visibleCandidateRows(24, 3), 3);
+  assert.ok(visibleCandidateRows(6, 40) >= 1);
 });
 
 test("role prompts pin exact peers and the repair-review loop", () => {

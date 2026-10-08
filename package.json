@@ -1,6 +1,6 @@
 {
   "name": "pi-intercom-review-pair",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Pair developer and reviewer Pi sessions for an issue through pi-intercom.",
   "type": "module",
   "main": "index.ts",
@@ -28,6 +28,7 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "pi-intercom": ">=0.12.1"
   },
   "pi": {

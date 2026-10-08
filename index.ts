@@ -278,6 +278,19 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
     if (candidates.length === 0) throw new Error("No other live session advertises the review-pair extension.");
     if (candidates.length === 1) return candidates[0];
 
+    if (ctx.mode === "tui") {
+      // Loaded on demand: only the TUI custom screen needs the host pi-tui components.
+      const { createReviewerPicker } = await import("./src/reviewer-picker.ts");
+      // Overlay, not the editor dock: pi shrinks the dock to the rows left under the
+      // transcript, so a docked picker clipped the selected row and the scroll counter.
+      const chosen = await ctx.ui.custom<LiveSession | undefined>(
+        (tui, theme, keybindings, done) =>
+          createReviewerPicker(tui, theme, keybindings, candidates, (session) => done(session)),
+        { overlay: true, overlayOptions: { maxHeight: "100%" } },
+      );
+      return chosen ?? undefined;
+    }
+
     const selected = await ctx.ui.select("Select reviewer", candidates.map(formatCandidate));
     return selected ? candidates.find((candidate) => formatCandidate(candidate) === selected) : undefined;
   };
