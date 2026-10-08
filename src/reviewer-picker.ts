@@ -1,16 +1,7 @@
-import type { KeybindingsManager, Theme, TUI } from "@earendil-works/pi-coding-agent";
-import { Container, SelectList, Spacer, Text } from "@earendil-works/pi-tui";
+import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { getSelectListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, SelectList, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 import { candidateDescription, candidateLabel, visibleCandidateRows, type LiveSession } from "./core.ts";
-
-function listTheme(theme: Theme) {
-  return {
-    selectedPrefix: (text: string) => text,
-    selectedText: (text: string) => theme.fg("accent", text),
-    description: (text: string) => theme.fg("muted", text),
-    scrollInfo: (text: string) => theme.fg("dim", text),
-    noMatch: (text: string) => theme.fg("warning", text),
-  };
-}
 
 class ReviewerPicker extends Container {
   private readonly list: SelectList;
@@ -29,12 +20,11 @@ class ReviewerPicker extends Container {
     this.list = new SelectList(
       candidates.map((session) => ({ value: session.id, label: candidateLabel(session), description: candidateDescription(session) })),
       this.rows(),
-      listTheme(theme),
+      getSelectListTheme(),
       { minPrimaryColumnWidth: 16, maxPrimaryColumnWidth: 32 },
     );
     this.list.onSelect = (item) => this.finish(candidates.find((session) => session.id === item.value));
     this.list.onCancel = () => this.finish(undefined);
-    this.list.onSelectionChange = () => tui.requestRender();
 
     this.addChild(new Text(theme.fg("accent", theme.bold("Select reviewer")), 1, 0));
     this.addChild(new Spacer(1));
