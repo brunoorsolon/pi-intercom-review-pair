@@ -210,20 +210,21 @@ async function setup(reviewPromptFailures = 0): Promise<{ base: FakePi; reviewer
 test("pairs the invoking session with the sole capable peer without environment metadata", async () => {
   const scenario = await setup();
   try {
-    scenario.base.inputValues.push("#0710", "billing");
+    scenario.base.inputValues.push("#0710", "billing", "");
     await scenario.base.invoke("");
 
     assert.equal(scenario.base.session.name, "billing-710");
     assert.equal(scenario.reviewer.session.name, "billing-710-review");
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 1);
-    assert.deepEqual(scenario.base.inputRequests.map(({ title }) => title), ["Issue number", "Project name (optional)"]);
+    assert.deepEqual(scenario.base.inputRequests.map(({ title }) => title), ["Issue number", "Project name (optional)", "Pull request (optional)"]);
     assert.equal(scenario.base.selectOptions.length, 0);
     assert.match(scenario.base.confirmations[0]!.message, /developer-session/);
     assert.match(scenario.base.confirmations[0]!.message, /reviewer-session/);
     assert.match(scenario.base.confirmations[0]!.message, /\/project\/repo · gpt · idle/);
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair active/);
 
+    scenario.base.inputValues.push("");
     await scenario.base.invoke("710 billing");
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 1);
@@ -236,14 +237,14 @@ test("pairs the invoking session with the sole capable peer without environment 
 test("uses a random project name when the optional project input is blank", async () => {
   const scenario = await setup();
   try {
-    scenario.base.inputValues.push("");
+    scenario.base.inputValues.push("", "");
     await scenario.base.invoke("716");
 
     const developerName = scenario.base.session.name!;
     const project = developerName.slice(0, -"-716".length);
     assert.ok((FALLBACK_PROJECT_NAMES as readonly string[]).includes(project));
     assert.equal(scenario.reviewer.session.name, `${project}-716-review`);
-    assert.deepEqual(scenario.base.inputRequests.map(({ title }) => title), ["Project name (optional)"]);
+    assert.deepEqual(scenario.base.inputRequests.map(({ title }) => title), ["Project name (optional)", "Pull request (optional)"]);
   } finally {
     scenario.restore();
   }
@@ -261,6 +262,7 @@ test("asks for the reviewer when multiple capable peers are live", async () => {
     });
     await other.start();
 
+    scenario.base.inputValues.push("");
     await scenario.base.invoke("714 billing");
 
     assert.equal(scenario.base.selectOptions.length, 1);
@@ -279,6 +281,7 @@ test("asks for the reviewer when multiple capable peers are live", async () => {
 test("always treats the invoking session as developer", async () => {
   const scenario = await setup();
   try {
+    scenario.reviewer.inputValues.push("");
     await scenario.reviewer.invoke("713 billing");
     assert.equal(scenario.reviewer.session.name, "billing-713");
     assert.equal(scenario.base.session.name, "billing-713-review");
@@ -317,6 +320,7 @@ test("ignores assignments not sent by the claimed developer", async () => {
 test("reports each side on partial failure and converges on rerun", async () => {
   const scenario = await setup(1);
   try {
+    scenario.base.inputValues.push("");
     await scenario.base.invoke("711 billing");
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair incomplete/);
     assert.match(scenario.base.notifications.at(-1)!.message, /Developer billing-711: ready/);
@@ -324,6 +328,7 @@ test("reports each side on partial failure and converges on rerun", async () => 
     assert.equal(scenario.base.prompts.length, 1);
     assert.equal(scenario.reviewer.prompts.length, 0);
 
+    scenario.base.inputValues.push("");
     await scenario.base.invoke("711 billing");
     assert.match(scenario.base.notifications.at(-1)!.message, /Review pair active/);
     assert.equal(scenario.base.prompts.length, 1);
@@ -360,11 +365,86 @@ test("rejects an ambiguous duplicate target name before confirmation", async () 
       model: "gpt",
       status: "idle",
     });
+    scenario.base.inputValues.push("");
     await scenario.base.invoke("712 billing");
     assert.equal(scenario.base.prompts.length, 0);
     assert.equal(scenario.reviewer.prompts.length, 0);
     assert.equal(scenario.base.confirmations.length, 0);
     assert.match(scenario.base.notifications.at(-1)!.message, /already used/);
+  } finally {
+    scenario.restore();
+  }
+});
+
+test("briefs both roles as a continuation when --pr names a pull request", async () => {
+  const scenario = await setup();
+  try {
+    await scenario.base.invoke("718 billing --pr 1234");
+
+    assert.deepEqual(scenario.base.inputRequests, []);
+    assert.equal(scenario.base.prompts.length, 1);
+    assert.equal(scenario.reviewer.prompts.length, 1);
+    assert.match(scenario.base.prompts[0]!, /continuation of an existing pair review on pull request 1234/);
+    assert.match(scenario.reviewer.prompts[0]!, /continuation of an existing pair review on pull request 1234/);
+    assert.match(scenario.base.confirmations[0]!.message, /Pull request: 1234 \(continuing review\)/);
+    assert.match(scenario.base.notifications.at(-1)!.message, /Review pair active/);
+  } finally {
+    scenario.restore();
+  }
+});
+
+test("prompts for a pull request and treats blank as a new review", async () => {
+  const scenario = await setup();
+  try {
+    scenario.base.inputValues.push("billing", "");
+    await scenario.base.invoke("719");
+
+    assert.deepEqual(scenario.base.inputRequests.map(({ title }) => title), [
+      "Project name (optional)",
+      "Pull request (optional)",
+    ]);
+    assert.doesNotMatch(scenario.base.prompts[0]!, /continuation of an existing pair review/);
+    assert.match(scenario.base.confirmations[0]!.message, /Pull request: none \(new review\)/);
+
+    scenario.base.inputValues.push("");
+    await scenario.base.invoke("720 billing");
+    assert.deepEqual(scenario.base.inputRequests.at(-1), {
+      title: "Pull request (optional)",
+      placeholder: "Leave blank for a new review",
+    });
+  } finally {
+    scenario.restore();
+  }
+});
+
+test("re-briefs both roles when the declared pull request changes", async () => {
+  const scenario = await setup();
+  try {
+    scenario.base.inputValues.push("");
+    await scenario.base.invoke("721 billing");
+    assert.equal(scenario.base.prompts.length, 1);
+    assert.doesNotMatch(scenario.base.prompts[0]!, /continuation of an existing pair review/);
+
+    await scenario.base.invoke("721 billing --pr 1234");
+    assert.equal(scenario.base.prompts.length, 2);
+    assert.equal(scenario.reviewer.prompts.length, 2);
+    assert.match(scenario.base.prompts[1]!, /continuation of an existing pair review on pull request 1234/);
+    assert.match(scenario.reviewer.prompts[1]!, /continuation of an existing pair review on pull request 1234/);
+  } finally {
+    scenario.restore();
+  }
+});
+
+test("rejects a bare or unknown option before side effects", async () => {
+  const scenario = await setup();
+  try {
+    await scenario.base.invoke("722 billing --pr");
+    assert.equal(scenario.base.prompts.length, 0);
+    assert.match(scenario.base.notifications.at(-1)!.message, /--pr requires a pull request reference/);
+
+    await scenario.base.invoke("722 billing --pull-request 9");
+    assert.equal(scenario.base.prompts.length, 0);
+    assert.match(scenario.base.notifications.at(-1)!.message, /Unknown option --pull-request/);
   } finally {
     scenario.restore();
   }

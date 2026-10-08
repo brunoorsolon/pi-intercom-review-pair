@@ -44,6 +44,19 @@ test("builds names from explicit or random project names", () => {
   );
 });
 
+test("treats a declared pull request as part of the assignment identity", () => {
+  const base = assignmentId("billing", "710", "developer-id", "reviewer-id");
+  assert.equal(
+    assignmentId("billing", "710", "developer-id", "reviewer-id", "1234"),
+    assignmentId("billing", "710", "developer-id", "reviewer-id", "1234"),
+  );
+  assert.notEqual(assignmentId("billing", "710", "developer-id", "reviewer-id", "1234"), base);
+  assert.notEqual(
+    assignmentId("billing", "710", "developer-id", "reviewer-id", "1234"),
+    assignmentId("billing", "710", "developer-id", "reviewer-id", "5678"),
+  );
+});
+
 test("offers every capable peer and excludes the invoking session", () => {
   const sessions: LiveSession[] = [
     { id: "current", runtimeFallbackAlias: true, cwd: "/repo", model: "gpt" },
@@ -111,6 +124,16 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   assert.match(reviewer, /No findings\./);
   assert.ok(reviewer.includes(processMarker("reviewer")));
   assert.notEqual(processMarker("developer"), processMarker("reviewer"));
+
+  const continuedDeveloper = developerPrompt("billing", "710", { id: "reviewer-id", name: "billing-710-review" }, { pullRequest: "1234" });
+  assert.match(continuedDeveloper, /continuation of an existing pair review on pull request 1234/);
+  assert.match(continuedDeveloper, /answer each previous finding/);
+  assert.doesNotMatch(developer, /continuation of an existing pair review/);
+
+  const continuedReviewer = reviewerPrompt("billing", "710", { id: "developer-id", name: "billing-710" }, { pullRequest: "1234" });
+  assert.match(continuedReviewer, /continuation of an existing pair review on pull request 1234/);
+  assert.match(continuedReviewer, /judge the new candidate against the open findings and the delta/);
+  assert.doesNotMatch(reviewer, /continuation of an existing pair review/);
 });
 
 test("parses only bounded protocol messages", () => {
@@ -136,4 +159,18 @@ test("parses only bounded protocol messages", () => {
   }), undefined);
   assert.equal(parsePairMessage({ version: 2, type: "ack", assignmentId: "x", ok: "yes" }), undefined);
   assert.equal(parsePairMessage(["not", "an", "object"]), undefined);
+
+  const assigned = parsePairMessage({
+    version: 2,
+    type: "assign",
+    assignmentId: "x",
+    coordinatorId: "one",
+    project: "billing",
+    issue: "710",
+    developerId: "two",
+    reviewerId: "three",
+    pullRequest: "1234",
+  });
+  assert.equal(assigned?.type, "assign");
+  assert.equal(assigned && "pullRequest" in assigned ? assigned.pullRequest : undefined, "1234");
 });

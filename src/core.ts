@@ -35,6 +35,13 @@ export interface AssignmentMessage {
   issue: string;
   developerId: string;
   reviewerId: string;
+  pullRequest?: string;
+}
+
+// A declared pull request marks an in-progress review: both roles read the
+// existing comments and open findings instead of starting the issue over.
+export interface ReviewContext {
+  pullRequest?: string;
 }
 
 export interface AcknowledgementMessage {
@@ -74,8 +81,14 @@ export function targetNames(project: string, issue: string): { developer: string
   return { developer: `${name}-${issue}`, reviewer: `${name}-${issue}-review` };
 }
 
-export function assignmentId(project: string, issue: string, developerId: string, reviewerId: string): string {
-  return JSON.stringify([2, project, issue, developerId, reviewerId]);
+export function assignmentId(
+  project: string,
+  issue: string,
+  developerId: string,
+  reviewerId: string,
+  pullRequest?: string,
+): string {
+  return JSON.stringify([2, project, issue, developerId, reviewerId, pullRequest ?? null]);
 }
 
 export function candidateSessions(
@@ -124,10 +137,23 @@ export function processMarker(role: PairRole): string {
   return `⟦pi-intercom-review-pair:${role}⟧`;
 }
 
-export function developerPrompt(project: string, issue: string, reviewer: PairTarget): string {
+function continuationBrief(role: PairRole, pullRequest: string): string {
+  const where = `pull request ${pullRequest}`;
+  return role === "developer"
+    ? `This is a continuation of an existing pair review on ${where}. Do not restart the issue from scratch: read the current branch, the existing review comments, and every open finding first, then answer each previous finding in your next candidate.`
+    : `This is a continuation of an existing pair review on ${where}. Do not re-review the issue from scratch: read the existing review comments first, then judge the new candidate against the open findings and the delta.`;
+}
+
+export function developerPrompt(
+  project: string,
+  issue: string,
+  reviewer: PairTarget,
+  context: ReviewContext = {},
+): string {
   return [
     `You are the developer for issue #${issue} in project ${project}.`,
     `Your reviewer is ${reviewer.name} (exact intercom session ID ${reviewer.id}).`,
+    ...(context.pullRequest ? [continuationBrief("developer", context.pullRequest)] : []),
     "Work only on the issue scope. Trace affected callers, implement the root fix, and run the relevant checks.",
     "When the candidate is committed and checked, request review. When the work has a pull request, post the candidate details there first (full SHA, base SHA, checks with commands and results, workspace artifact paths and digests, and your response to each previous finding), then ask with only the SHA and that comment's URL: " +
       `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>: <comment URL>" }).`,
@@ -141,10 +167,16 @@ export function developerPrompt(project: string, issue: string, reviewer: PairTa
   ].join("\n\n");
 }
 
-export function reviewerPrompt(project: string, issue: string, developer: PairTarget): string {
+export function reviewerPrompt(
+  project: string,
+  issue: string,
+  developer: PairTarget,
+  context: ReviewContext = {},
+): string {
   return [
     `You are the read-only reviewer for issue #${issue} in project ${project}.`,
     `The developer is ${developer.name} (exact intercom session ID ${developer.id}).`,
+    ...(context.pullRequest ? [continuationBrief("reviewer", context.pullRequest)] : []),
     "Wait for the developer's review request, then inspect the exact candidate revision or shared workspace artifact it identifies. Do not assume your local worktree contains the candidate.",
     "Review the full diff and affected callers for correctness, regressions, security, missing validation, and unrequested scope. Do not modify the implementation.",
     "Write findings ordered by severity with exact file and line evidence. When the candidate has a pull request, post them on the pull request the review request links through this repository's standard review process (when the request omits one, locate it the usual way), then reply with only the verdict and that comment's URL, for example `REJECT: <comment URL>`. Without a pull request, the reply carries the findings themselves.",
@@ -188,6 +220,7 @@ export function parsePairMessage(value: unknown): PairMessage | undefined {
     const issue = text(record, "issue");
     const developerId = text(record, "developerId");
     const reviewerId = text(record, "reviewerId");
+    const pullRequest = text(record, "pullRequest");
     if (!assignmentIdValue || !coordinatorId || !project || !issue || !developerId || !reviewerId) return undefined;
     try {
       if (normalizeIssueNumber(issue) !== issue) return undefined;
@@ -203,6 +236,7 @@ export function parsePairMessage(value: unknown): PairMessage | undefined {
       issue,
       developerId,
       reviewerId,
+      ...(pullRequest ? { pullRequest } : {}),
     };
   }
 
