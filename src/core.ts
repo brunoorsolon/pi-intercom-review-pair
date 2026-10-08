@@ -93,6 +93,23 @@ export function findNameConflict(sessions: LiveSession[], name: string, allowedS
   return sessions.find((session) => session.id !== allowedSessionId && session.name?.toLowerCase() === expected);
 }
 
+// The picker spends these rows on its title, spacers, footer, and scroll counter.
+const PICKER_CHROME_ROWS = 6;
+
+export function candidateLabel(session: LiveSession): string {
+  return session.name || `Unnamed ${session.id.slice(0, 8)}`;
+}
+
+export function candidateDescription(session: LiveSession): string {
+  const segments = session.cwd.split("/").filter(Boolean);
+  const cwd = segments.length > 2 ? `…/${segments.slice(-2).join("/")}` : session.cwd;
+  return [cwd, session.model, session.status, `id ${session.id.slice(0, 8)}`].filter(Boolean).join(" · ");
+}
+
+export function visibleCandidateRows(terminalRows: number, candidates: number): number {
+  return Math.max(1, Math.min(candidates, terminalRows - PICKER_CHROME_ROWS));
+}
+
 export function formatCandidate(session: LiveSession): string {
   const name = session.name || "Unnamed session";
   const status = session.status ? ` · ${session.status}` : "";

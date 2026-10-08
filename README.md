@@ -21,7 +21,7 @@ From the session that should become the developer, run:
 /pair-review 999 billing
 ```
 
-Omit the issue number to enter it interactively. Omit the project name to enter it interactively; leave that prompt blank to use a random common word. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID.
+Omit the issue number to enter it interactively. Omit the project name to enter it interactively; leave that prompt blank to use a random common word. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID. In the TUI the picker is a full custom screen: one line per session, a viewport that scrolls with the terminal height, and up/down, page up/down, enter, and escape navigation.
 
 After confirmation, the command assigns these names:
 
