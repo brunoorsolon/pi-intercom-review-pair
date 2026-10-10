@@ -18,18 +18,20 @@ No sandbox environment variables are required. If `PI_INTERCOM_SCOPE_ID` is conf
 From the session that should become the developer, run:
 
 ```text
-/pair-review 999 billing
+/pair-review 999
 ```
 
-Omit the issue number to enter it interactively. Omit the project name to enter it interactively; leave that prompt blank to use a random common word. Right after it, the command asks for a pull request; leave that blank for a new review. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID. In the TUI the picker is a full custom screen: one line per session, a viewport that scrolls with the terminal height, and up/down, page up/down, enter, and escape navigation.
+Omit the issue number to enter it interactively. The session-name prefix comes from `--project <name>` when supplied; otherwise the command reads the repository name from the Git `origin` remote in the invoking session's working directory, falling back to a random common word when unavailable. It never asks for a project name or pull request. Without `--pr`, pairing starts a new review. The invoking session is always the developer. If exactly one other review-pair session is live, it becomes the reviewer automatically; otherwise the command asks you to select the reviewer by session name, working directory, model, status, and ID. In the TUI the picker is a full custom screen: one line per session, a viewport that scrolls with the terminal height, and up/down, page up/down, enter, and escape navigation.
 
-Declare an in-progress review up front with `--pr`:
+Override the session-name prefix and declare an in-progress review with the optional flags:
 
 ```text
-/pair-review 999 billing --pr 1234
+/pair-review 999 --project billing --pr 1234
 ```
 
-`--pr` skips the pull-request prompt and tells both roles the named pull request is already under review, so they read the current branch, existing comments, and open findings instead of starting the issue from scratch. The reference becomes part of the pairing identity: re-running with a different one re-briefs both sessions, and re-running with the same one stays idempotent.
+`--project` skips Git detection and random selection entirely. The old positional project name remains supported for compatibility, but cannot be combined with `--project`.
+
+`--pr` tells both roles the named pull request is already under review, so they read the current branch, existing comments, and open findings instead of starting the issue from scratch. The reference becomes part of the pairing identity: re-running with a different one re-briefs both sessions, and re-running with the same one stays idempotent.
 
 After confirmation, the command assigns these names:
 
@@ -38,7 +40,7 @@ After confirmation, the command assigns these names:
 <project>-<issue>-review
 ```
 
-Both targets receive self-contained role instructions. The developer asks the exact reviewer session to inspect a committed candidate, verifies findings, repairs valid ones, and repeats until the reviewer explicitly returns `No findings.` or requests a human decision.
+Both targets receive self-contained role instructions identifying the issue and exact peer, without claiming that the session-name prefix is the actual project name. The developer asks the exact reviewer session to inspect a committed candidate, verifies findings, repairs valid ones, and repeats until the reviewer explicitly returns `No findings.` or requests a human decision.
 
 When the work has a pull request, both roles post the full review request and findings there and send each other only the candidate SHA or verdict plus the comment URL over intercom. Without a pull request, intercom carries the full content.
 

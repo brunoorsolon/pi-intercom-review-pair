@@ -12,6 +12,7 @@ import {
   normalizeIssueNumber,
   parsePairMessage,
   processMarker,
+  projectNameFromRemote,
   randomProjectName,
   reviewerPrompt,
   targetNames,
@@ -42,6 +43,24 @@ test("builds names from explicit or random project names", () => {
     assignmentId("billing", "710", "developer-id", "reviewer-id"),
     assignmentId("billing", "710", "developer-id", "other-reviewer"),
   );
+});
+
+test("extracts repository names from Git remotes without using local checkout names", () => {
+  for (const remote of [
+    "git@github.com:owner/cortex.git",
+    "ssh://git@example.com:2222/owner/cortex.git",
+    "https://example.com/owner/cortex.git",
+    "https://example.com/owner/cortex.git/?token=ignored#fragment",
+    "file:///shared/cortex.git",
+    "/shared/cortex.git",
+    "  git@example.com:owner/cortex.git\n",
+  ]) {
+    assert.equal(projectNameFromRemote(remote), "cortex", remote);
+  }
+  assert.equal(projectNameFromRemote("https://example.com/owner/plain-name"), "plain-name");
+  for (const remote of ["", "https://example.com/", "https://", "git@example.com:", "/shared/.git", "/shared/..", "https://example.com/owner/bad%20name.git", "bad\nname.git", "https://example.com/owner/bad%ZZ.git"]) {
+    assert.equal(projectNameFromRemote(remote), undefined, remote);
+  }
 });
 
 test("treats a declared pull request as part of the assignment identity", () => {
@@ -109,14 +128,18 @@ test("keeps picker rows to one line each and fits them inside the terminal", () 
 });
 
 test("role prompts pin exact peers and the repair-review loop", () => {
-  const developer = developerPrompt("billing", "710", { id: "reviewer-id", name: "billing-710-review" });
+  const developer = developerPrompt("710", { id: "reviewer-id", name: "billing-710-review" });
+  assert.match(developer, /You are the developer for issue #710\./);
+  assert.doesNotMatch(developer, /in project/);
   assert.match(developer, /to: "reviewer-id"/);
   assert.match(developer, /full SHA/);
   assert.match(developer, /fix valid findings/);
   assert.match(developer, /silence and timeouts are not approval/);
   assert.ok(developer.includes(processMarker("developer")));
 
-  const reviewer = reviewerPrompt("billing", "710", { id: "developer-id", name: "billing-710" });
+  const reviewer = reviewerPrompt("710", { id: "developer-id", name: "billing-710" });
+  assert.match(reviewer, /You are the read-only reviewer for issue #710\./);
+  assert.doesNotMatch(reviewer, /in project/);
   assert.match(reviewer, /read-only reviewer/);
   assert.match(reviewer, /exact candidate revision/);
   assert.match(reviewer, /action: "reply"/);
@@ -125,12 +148,12 @@ test("role prompts pin exact peers and the repair-review loop", () => {
   assert.ok(reviewer.includes(processMarker("reviewer")));
   assert.notEqual(processMarker("developer"), processMarker("reviewer"));
 
-  const continuedDeveloper = developerPrompt("billing", "710", { id: "reviewer-id", name: "billing-710-review" }, { pullRequest: "1234" });
+  const continuedDeveloper = developerPrompt("710", { id: "reviewer-id", name: "billing-710-review" }, { pullRequest: "1234" });
   assert.match(continuedDeveloper, /continuation of an existing pair review on pull request 1234/);
   assert.match(continuedDeveloper, /answer each previous finding/);
   assert.doesNotMatch(developer, /continuation of an existing pair review/);
 
-  const continuedReviewer = reviewerPrompt("billing", "710", { id: "developer-id", name: "billing-710" }, { pullRequest: "1234" });
+  const continuedReviewer = reviewerPrompt("710", { id: "developer-id", name: "billing-710" }, { pullRequest: "1234" });
   assert.match(continuedReviewer, /continuation of an existing pair review on pull request 1234/);
   assert.match(continuedReviewer, /judge the new candidate against the open findings and the delta/);
   assert.doesNotMatch(reviewer, /continuation of an existing pair review/);
