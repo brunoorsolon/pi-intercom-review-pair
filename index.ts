@@ -8,6 +8,7 @@ import {
   formatCandidate,
   normalizeIssueNumber,
   parsePairMessage,
+  projectNameFromRemote,
   randomProjectName,
   reviewerPrompt,
   targetNames,
@@ -168,8 +169,8 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
       pi.setSessionName(expectedName);
       const context = message.pullRequest ? { pullRequest: message.pullRequest } : {};
       const prompt = isDeveloper
-        ? developerPrompt(message.project, issue, reviewer, context)
-        : reviewerPrompt(message.project, issue, developer, context);
+        ? developerPrompt(issue, reviewer, context)
+        : reviewerPrompt(issue, developer, context);
       pi.sendUserMessage(prompt, runtimeContext.isIdle() ? undefined : { deliverAs: "followUp" });
 
       const ack: AcknowledgementMessage = {
@@ -328,16 +329,21 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
     commandRunning = true;
     try {
       let pullRequest: string | undefined;
-      let pullRequestGiven = false;
+      let project: string | undefined;
       const positionals: string[] = [];
       const tokens = args.trim() ? args.trim().split(/\s+/) : [];
       for (let index = 0; index < tokens.length; index += 1) {
         const token = tokens[index]!;
-        if (token === "--pr") {
+        if (token === "--pr" || token === "--project") {
           const value = tokens[index + 1];
-          if (!value || value.startsWith("-")) throw new Error("--pr requires a pull request reference.");
-          pullRequest = value;
-          pullRequestGiven = true;
+          if (!value || value.startsWith("-")) {
+            throw new Error(`${token} requires ${token === "--pr" ? "a pull request reference" : "a project name"}.`);
+          }
+          if (token === "--pr") pullRequest = value;
+          else {
+            if (project) throw new Error("--project may only be supplied once.");
+            project = value;
+          }
           index += 1;
           continue;
         }
@@ -345,6 +351,10 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
         positionals.push(token);
       }
       const [issueArgument = "", ...projectArguments] = positionals;
+      if (projectArguments.length) {
+        if (project) throw new Error("Use either --project or a positional project name, not both.");
+        project = projectArguments.join(" ");
+      }
       let issueInput = issueArgument;
       if (!issueInput) {
         const entered = await ctx.ui.input("Issue number", "999");
@@ -353,17 +363,14 @@ export default function reviewPairExtension(pi: ExtensionAPI): void {
       }
       const issue = normalizeIssueNumber(issueInput);
 
-      let project = projectArguments.join(" ").trim();
       if (!project) {
-        const entered = await ctx.ui.input("Project name (optional)", "Leave blank for a random word");
-        if (entered === undefined) return;
-        project = entered.trim() || randomProjectName();
-      }
-
-      if (!pullRequestGiven) {
-        const entered = await ctx.ui.input("Pull request (optional)", "Leave blank for a new review");
-        if (entered === undefined) return;
-        pullRequest = entered.trim() || undefined;
+        try {
+          const result = await pi.exec("git", ["remote", "get-url", "origin"], { cwd: ctx.cwd, timeout: 3_000 });
+          if (result.code === 0 && !result.killed) project = projectNameFromRemote(result.stdout);
+        } catch {
+          // Git is optional; unavailable Git falls back to a session-name prefix.
+        }
+        project ??= randomProjectName();
       }
 
       const { sessions, self } = await discover();

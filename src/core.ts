@@ -75,6 +75,17 @@ export function randomProjectName(): string {
   return FALLBACK_PROJECT_NAMES[randomInt(FALLBACK_PROJECT_NAMES.length)]!;
 }
 
+export function projectNameFromRemote(remote: string): string | undefined {
+  try {
+    const value = remote.trim();
+    const path = value.includes("://") ? new URL(value).pathname : value;
+    const name = decodeURIComponent(path.replace(/[\\/]+$/, "").split(/[\\/:]/).pop() ?? "").replace(/\.git$/, "");
+    return name && name !== "." && name !== ".." && !/[\s\\/:?#\u0000-\u001f\u007f]/.test(name) ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function targetNames(project: string, issue: string): { developer: string; reviewer: string } {
   const name = project.trim();
   if (!name) throw new Error("Project name is required.");
@@ -145,13 +156,12 @@ function continuationBrief(role: PairRole, pullRequest: string): string {
 }
 
 export function developerPrompt(
-  project: string,
   issue: string,
   reviewer: PairTarget,
   context: ReviewContext = {},
 ): string {
   return [
-    `You are the developer for issue #${issue} in project ${project}.`,
+    `You are the developer for issue #${issue}.`,
     `Your reviewer is ${reviewer.name} (exact intercom session ID ${reviewer.id}).`,
     ...(context.pullRequest ? [continuationBrief("developer", context.pullRequest)] : []),
     "Work only on the issue scope. Trace affected callers, implement the root fix, and run the relevant checks.",
@@ -168,13 +178,12 @@ export function developerPrompt(
 }
 
 export function reviewerPrompt(
-  project: string,
   issue: string,
   developer: PairTarget,
   context: ReviewContext = {},
 ): string {
   return [
-    `You are the read-only reviewer for issue #${issue} in project ${project}.`,
+    `You are the read-only reviewer for issue #${issue}.`,
     `The developer is ${developer.name} (exact intercom session ID ${developer.id}).`,
     ...(context.pullRequest ? [continuationBrief("reviewer", context.pullRequest)] : []),
     "Wait for the developer's review request, then inspect the exact candidate revision or shared workspace artifact it identifies. Do not assume your local worktree contains the candidate.",

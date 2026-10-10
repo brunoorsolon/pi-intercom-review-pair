@@ -82,7 +82,7 @@ class RpcClient {
       } else if (message.method === "confirm") {
         this.send({ type: "extension_ui_response", id: message.id, confirmed: true });
       } else if (["input", "editor"].includes(message.method)) {
-        const value = message.title === "Pull request (optional)" ? "" : "710";
+        const value = "710";
         this.send({ type: "extension_ui_response", id: message.id, value });
       }
       return;
@@ -148,7 +148,7 @@ const [developer, reviewer, unrelated] = clients;
 try {
   await Promise.all(clients.map((client) => client.request({ type: "get_commands" })));
   await new Promise((resolveWait) => setTimeout(resolveWait, 500));
-  await developer.request({ type: "prompt", message: `/pair-review #0710 ${project}` });
+  await developer.request({ type: "prompt", message: `/pair-review #0710 --project ${project}` });
   await Promise.all(clients.map((client) => client.waitIdle()));
   assert.equal((await developer.state()).sessionName, `${project}-710`);
   assert.equal((await reviewer.state()).sessionName, `${project}-710-review`);
@@ -161,7 +161,7 @@ try {
   assert.equal(occurrences(firstDeveloperMessages, "You are the developer for issue #710"), 1);
   assert.equal(occurrences(firstReviewerMessages, "You are the read-only reviewer for issue #710"), 1);
 
-  await developer.request({ type: "prompt", message: `/pair-review 710 ${project}` });
+  await developer.request({ type: "prompt", message: `/pair-review 710 --project ${project}` });
   await Promise.all(clients.map((client) => client.waitIdle()));
   assert.equal(occurrences(await developer.messages(), "You are the developer for issue #710"), 1);
   assert.equal(occurrences(await reviewer.messages(), "You are the read-only reviewer for issue #710"), 1);
