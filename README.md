@@ -40,9 +40,9 @@ After confirmation, the command assigns these names:
 <project>-<issue>-review
 ```
 
-Both targets receive self-contained role instructions identifying the issue and exact peer, without claiming that the session-name prefix is the actual project name. The developer asks the exact reviewer session to inspect a committed candidate, verifies findings, repairs valid ones, and repeats until the reviewer explicitly returns `No findings.` or requests a human decision.
+Both targets receive self-contained role instructions identifying the issue and exact peer, without claiming that the session-name prefix is the actual project name. The repository workflow, including any skill selected by the role marker, governs when independent review can begin. If it requires a draft/WIP pull request and published evidence first, the developer completes those steps before asking the paired reviewer, and the reviewer waits if they are missing. Omitting `--pr` does not waive these prerequisites. Private author preflight is separate from paired independent review.
 
-When the work has a pull request, both roles post the full review request and findings there and send each other only the candidate SHA or verdict plus the comment URL over intercom. Without a pull request, intercom carries the full content.
+Once those prerequisites are satisfied, the developer asks the exact reviewer session to inspect a committed candidate, verifies findings, repairs valid ones, and repeats until the reviewer explicitly returns `No findings.` or requests a human decision. When the work has a pull request, both roles post the full review request and findings there and send each other only the candidate SHA or verdict plus the comment URL over intercom. Intercom carries the full content without a pull request only when the repository workflow permits PR-less review.
 
 ## Process markers
 
