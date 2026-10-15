@@ -163,11 +163,12 @@ export function developerPrompt(
   return [
     `You are the developer for issue #${issue}.`,
     `Your reviewer is ${reviewer.name} (exact intercom session ID ${reviewer.id}).`,
+    "Follow the repository workflow, including any skill selected by the role marker, before the generic pairing instructions below. That workflow governs review timing and prerequisites; omitting --pr does not waive them.",
     ...(context.pullRequest ? [continuationBrief("developer", context.pullRequest)] : []),
     "Work only on the issue scope. Trace affected callers, implement the root fix, and run the relevant checks.",
-    "When the candidate is committed and checked, request review. When the work has a pull request, post the candidate details there first (full SHA, base SHA, checks with commands and results, workspace artifact paths and digests, and your response to each previous finding), then ask with only the SHA and that comment's URL: " +
+    "Request independent review only after the candidate is committed and checked and the repository's review prerequisites are satisfied. If the workflow requires a draft/WIP pull request and published evidence first, open it and publish that evidence before asking the paired reviewer; private author preflight is not this independent review. When the work has a pull request, post the candidate details there first (full SHA, base SHA, checks with commands and results, workspace artifact paths and digests, and your response to each previous finding), then ask with only the SHA and that comment's URL: " +
       `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>: <comment URL>" }).`,
-    "Without a pull request, the ask carries the details itself: " +
+    "Only when the repository workflow permits review without a pull request, the ask carries the details itself: " +
       `intercom({ action: "ask", to: ${JSON.stringify(reviewer.id)}, message: "Review candidate <full SHA>. Base: <base SHA>. Checks: <commands/results>. Workspace artifacts: <paths/digests>." }).`,
     "With a pull request, intercom carries only pointers and the pull request is the published record: when the reviewer's message links a comment, read the findings there.",
     processMarker("developer"),
@@ -185,10 +186,11 @@ export function reviewerPrompt(
   return [
     `You are the read-only reviewer for issue #${issue}.`,
     `The developer is ${developer.name} (exact intercom session ID ${developer.id}).`,
+    "Follow the repository workflow, including any skill selected by the role marker, before the generic pairing instructions below. Before starting independent review, verify its prerequisites. If a required draft/WIP pull request or published evidence is missing, tell the developer what is needed and wait; omitting --pr does not waive those prerequisites.",
     ...(context.pullRequest ? [continuationBrief("reviewer", context.pullRequest)] : []),
     "Wait for the developer's review request, then inspect the exact candidate revision or shared workspace artifact it identifies. Do not assume your local worktree contains the candidate.",
     "Review the full diff and affected callers for correctness, regressions, security, missing validation, and unrequested scope. Do not modify the implementation.",
-    "Write findings ordered by severity with exact file and line evidence. When the candidate has a pull request, post them on the pull request the review request links through this repository's standard review process (when the request omits one, locate it the usual way), then reply with only the verdict and that comment's URL, for example `REJECT: <comment URL>`. Without a pull request, the reply carries the findings themselves.",
+    "Write findings ordered by severity with exact file and line evidence. When the candidate has a pull request, post them on the pull request the review request links through this repository's standard review process (when the request omits one, locate it the usual way), then reply with only the verdict and that comment's URL, for example `REJECT: <comment URL>`. Only when the repository workflow permits review without a pull request, the reply carries the findings themselves.",
     "Reply through the active intercom path with `intercom({ action: \"reply\", message: \"...\" })`. If the reply is not delivered, the developer's ask is no longer open. Send the same message with " +
       `intercom({ action: "send", to: ${JSON.stringify(developer.id)}, message: "..." }) instead; never drop findings.`,
     processMarker("reviewer"),
